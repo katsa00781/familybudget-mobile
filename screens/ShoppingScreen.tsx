@@ -11,6 +11,7 @@ import {
   Modal,
   FlatList,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 
 // Auth context mock for development
@@ -291,15 +292,24 @@ export default function ShoppingScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#10B981" />
-        <Text style={styles.loadingText}>Betöltés...</Text>
-      </View>
+      <LinearGradient
+        colors={['#22D3EE', '#14B8A6', '#22C55E']}
+        style={styles.container}
+      >
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#ffffff" />
+          <Text style={styles.loadingText}>Betöltés...</Text>
+        </View>
+      </LinearGradient>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <LinearGradient
+      colors={['#22D3EE', '#14B8A6', '#22C55E']}
+      style={styles.container}
+    >
+      <SafeAreaView style={styles.safeArea}>
       {/* Shopping Lists */}
       {shoppingLists.length === 0 ? (
         <View style={styles.flex1}>
@@ -463,13 +473,16 @@ export default function ShoppingScreen() {
         </View>
       </Modal>
     </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+  },
+  safeArea: {
+    flex: 1,
   },
   content: {
     flex: 1,
@@ -487,7 +500,10 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#6B7280',
+    color: '#ffffff',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   header: {
     flexDirection: 'row',
@@ -498,7 +514,10 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1F2937',
+    color: '#ffffff',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
   },
   addButton: {
     backgroundColor: '#10B981',

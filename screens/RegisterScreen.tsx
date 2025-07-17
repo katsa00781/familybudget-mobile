@@ -8,6 +8,7 @@ import {
   Alert,
   SafeAreaView,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 
@@ -60,66 +61,76 @@ export default function RegisterScreen({ navigation }: RegisterScreenProps) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <View style={styles.logoContainer}>
-          <Ionicons name="person-add" size={80} color="#0891b2" />
+    <LinearGradient
+      colors={['#22D3EE', '#14B8A6', '#22C55E']}
+      style={styles.container}
+    >
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.content}>
+          <View style={styles.logoContainer}>
+            <Ionicons name="person-add" size={80} color="#ffffff" />
+          </View>
+          <Text style={styles.title}>Családi Költségvetés</Text>
+          <Text style={styles.subtitle}>Regisztráció</Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Teljes név"
+            placeholderTextColor="#888"
+            value={fullName}
+            onChangeText={setFullName}
+            autoComplete="name"
+          />
+
+          <TextInput
+            style={styles.input}
+            placeholder="E-mail cím"
+            placeholderTextColor="#888"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            autoComplete="email"
+          />
+
+          <TextInput
+            style={styles.input}
+            placeholder="Jelszó (min. 6 karakter)"
+            placeholderTextColor="#888"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoComplete="password-new"
+          />
+
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleRegister}
+            disabled={loading}
+          >
+            <Text style={styles.buttonText}>
+              {loading ? 'Regisztráció...' : 'Regisztráció'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.linkButton}
+            onPress={() => navigation.navigate('Login')}
+          >
+            <Text style={styles.linkText}>Van már fiókod? Jelentkezz be</Text>
+          </TouchableOpacity>
         </View>
-        <Text style={styles.title}>Családi Költségvetés</Text>
-        <Text style={styles.subtitle}>Regisztráció</Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Teljes név"
-          value={fullName}
-          onChangeText={setFullName}
-          autoComplete="name"
-        />
-
-        <TextInput
-          style={styles.input}
-          placeholder="E-mail cím"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          autoComplete="email"
-        />
-
-        <TextInput
-          style={styles.input}
-          placeholder="Jelszó (min. 6 karakter)"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoComplete="password-new"
-        />
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleRegister}
-          disabled={loading}
-        >
-          <Text style={styles.buttonText}>
-            {loading ? 'Regisztráció...' : 'Regisztráció'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.linkButton}
-          onPress={() => navigation.navigate('Login')}
-        >
-          <Text style={styles.linkText}>Van már fiókod? Jelentkezz be</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+  },
+  safeArea: {
+    flex: 1,
   },
   content: {
     flex: 1,
@@ -135,44 +146,58 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 10,
-    color: '#333',
+    color: '#ffffff',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
   },
   subtitle: {
     fontSize: 18,
     textAlign: 'center',
     marginBottom: 40,
-    color: '#666',
+    color: '#ffffff',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   input: {
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
     borderRadius: 8,
     padding: 15,
     marginBottom: 15,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   button: {
-    backgroundColor: '#0891b2',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 8,
     padding: 15,
     alignItems: 'center',
     marginTop: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   buttonDisabled: {
     opacity: 0.7,
   },
   buttonText: {
-    color: 'white',
+    color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   linkButton: {
     marginTop: 20,
     alignItems: 'center',
   },
   linkText: {
-    color: '#0891b2',
+    color: '#ffffff',
     fontSize: 16,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
 });

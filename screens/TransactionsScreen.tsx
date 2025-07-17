@@ -10,6 +10,7 @@ import {
   Modal,
   ActivityIndicator,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -210,17 +211,26 @@ export default function TransactionsScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0891b2" />
-        <Text style={styles.loadingText}>Betöltés...</Text>
-      </View>
+      <LinearGradient
+        colors={['#22D3EE', '#14B8A6', '#22C55E']}
+        style={styles.container}
+      >
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#ffffff" />
+          <Text style={styles.loadingText}>Betöltés...</Text>
+        </View>
+      </LinearGradient>
     );
   }
 
   const filteredTransactions = getFilteredTransactions();
 
   return (
-    <View style={styles.container}>
+    <LinearGradient
+      colors={['#22D3EE', '#14B8A6', '#22C55E']}
+      style={styles.container}
+    >
+      <ScrollView style={styles.scrollContent}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Tranzakciók</Text>
@@ -553,25 +563,30 @@ export default function TransactionsScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+      </ScrollView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+  },
+  scrollContent: {
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#64748b',
+    color: '#ffffff',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   header: {
     padding: 16,
@@ -580,14 +595,20 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#0f172a',
+    color: '#ffffff',
     textAlign: 'center',
     marginBottom: 8,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
   },
   subtitle: {
     fontSize: 16,
-    color: '#64748b',
+    color: '#ffffff',
     textAlign: 'center',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   summaryContainer: {
     flexDirection: 'row',
