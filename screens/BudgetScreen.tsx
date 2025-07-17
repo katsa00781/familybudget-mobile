@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 
@@ -115,7 +116,10 @@ const BudgetScreen: React.FC = () => {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: COLORS.familybudget.teal }]}>
+    <LinearGradient
+      colors={['#22D3EE', '#14B8A6', '#22C55E']}
+      style={styles.container}
+    >
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Header Card */}
         <View style={styles.headerCard}>
@@ -204,7 +208,7 @@ const BudgetScreen: React.FC = () => {
           </View>
         </View>
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 };
 

@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -298,15 +299,22 @@ export default function HomeScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0891b2" />
-        <Text style={styles.loadingText}>Adatok betöltése...</Text>
-      </View>
+      <LinearGradient
+        colors={['#22D3EE', '#14B8A6', '#22C55E']}
+        style={styles.loadingContainer}
+      >
+        <ActivityIndicator size="large" color="#ffffff" />
+        <Text style={[styles.loadingText, { color: '#ffffff' }]}>Adatok betöltése...</Text>
+      </LinearGradient>
     );
   }
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <LinearGradient
+      colors={['#22D3EE', '#14B8A6', '#22C55E']}
+      style={styles.container}
+    >
+      <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Dashboard</Text>
@@ -506,20 +514,22 @@ export default function HomeScreen() {
       )}
 
       <View style={styles.bottomSpacer} />
-    </ScrollView>
+      </ScrollView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f7fa',
+  },
+  scrollContent: {
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f7fa',
   },
   loadingText: {
     marginTop: 16,
