@@ -1,0 +1,15 @@
+<svg width="1284" height="2778" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0891b2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0369a1;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="1284" height="2778" fill="url(#grad1)"/>
+  <circle cx="642" cy="1000" r="200" fill="white"/>
+  <rect x="542" y="1250" width="200" height="50" rx="25" fill="white"/>
+  <rect x="542" y="1320" width="200" height="50" rx="25" fill="white"/>
+  <rect x="542" y="1390" width="200" height="50" rx="25" fill="white"/>
+  <text x="642" y="1600" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="80" font-weight="bold">Családi</text>
+  <text x="642" y="1700" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="80" font-weight="bold">Költségvetés</text>
+</svg>
