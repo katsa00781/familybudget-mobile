@@ -187,6 +187,126 @@ const BudgetScreen: React.FC = () => {
           })}
         </View>
 
+        {/* Budget Plan Categories */}
+        <View style={styles.sectionContainer}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Költségvetési terv</Text>
+            <TouchableOpacity>
+              <Ionicons name="settings" size={24} color={COLORS.familybudget.blue} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.budgetPlanContainer}>
+            <View style={styles.budgetCategoryCard}>
+              <View style={styles.categoryHeader}>
+                <View style={[styles.categoryIcon, { backgroundColor: `${COLORS.familybudget.utilities}20` }]}>
+                  <Ionicons name="home" size={24} color={COLORS.familybudget.utilities} />
+                </View>
+                <View style={styles.categoryInfo}>
+                  <Text style={styles.categoryName}>Lakbér és rezsi</Text>
+                  <Text style={styles.categoryDetails}>Havi lakbér, villany, víz, internet</Text>
+                </View>
+              </View>
+              <View style={styles.categoryAmount}>
+                <Text style={styles.categoryBudget}>145 000 Ft</Text>
+                <Text style={styles.categorySpent}>105 420 Ft felhasználva</Text>
+              </View>
+              <View style={styles.categoryProgress}>
+                <View style={styles.progressBar}>
+                  <View 
+                    style={[
+                      styles.progressFill, 
+                      { width: '73%', backgroundColor: COLORS.familybudget.utilities }
+                    ]} 
+                  />
+                </View>
+                <Text style={styles.progressText}>73%</Text>
+              </View>
+            </View>
+
+            <View style={styles.budgetCategoryCard}>
+              <View style={styles.categoryHeader}>
+                <View style={[styles.categoryIcon, { backgroundColor: `${COLORS.familybudget.food}20` }]}>
+                  <Ionicons name="restaurant" size={24} color={COLORS.familybudget.food} />
+                </View>
+                <View style={styles.categoryInfo}>
+                  <Text style={styles.categoryName}>Élelmiszer</Text>
+                  <Text style={styles.categoryDetails}>Bevásárlás, éttermi költések</Text>
+                </View>
+              </View>
+              <View style={styles.categoryAmount}>
+                <Text style={styles.categoryBudget}>80 000 Ft</Text>
+                <Text style={styles.categorySpent}>45 200 Ft felhasználva</Text>
+              </View>
+              <View style={styles.categoryProgress}>
+                <View style={styles.progressBar}>
+                  <View 
+                    style={[
+                      styles.progressFill, 
+                      { width: '57%', backgroundColor: COLORS.familybudget.food }
+                    ]} 
+                  />
+                </View>
+                <Text style={styles.progressText}>57%</Text>
+              </View>
+            </View>
+
+            <View style={styles.budgetCategoryCard}>
+              <View style={styles.categoryHeader}>
+                <View style={[styles.categoryIcon, { backgroundColor: `${COLORS.familybudget.transport}20` }]}>
+                  <Ionicons name="car" size={24} color={COLORS.familybudget.transport} />
+                </View>
+                <View style={styles.categoryInfo}>
+                  <Text style={styles.categoryName}>Közlekedés</Text>
+                  <Text style={styles.categoryDetails}>Benzin, tömegközlekedés</Text>
+                </View>
+              </View>
+              <View style={styles.categoryAmount}>
+                <Text style={styles.categoryBudget}>35 000 Ft</Text>
+                <Text style={styles.categorySpent}>18 750 Ft felhasználva</Text>
+              </View>
+              <View style={styles.categoryProgress}>
+                <View style={styles.progressBar}>
+                  <View 
+                    style={[
+                      styles.progressFill, 
+                      { width: '54%', backgroundColor: COLORS.familybudget.transport }
+                    ]} 
+                  />
+                </View>
+                <Text style={styles.progressText}>54%</Text>
+              </View>
+            </View>
+
+            <View style={styles.budgetCategoryCard}>
+              <View style={styles.categoryHeader}>
+                <View style={[styles.categoryIcon, { backgroundColor: `${COLORS.familybudget.entertainment}20` }]}>
+                  <Ionicons name="game-controller" size={24} color={COLORS.familybudget.entertainment} />
+                </View>
+                <View style={styles.categoryInfo}>
+                  <Text style={styles.categoryName}>Szórakozás</Text>
+                  <Text style={styles.categoryDetails}>Mozi, koncert, hobby</Text>
+                </View>
+              </View>
+              <View style={styles.categoryAmount}>
+                <Text style={styles.categoryBudget}>25 000 Ft</Text>
+                <Text style={styles.categorySpent}>12 300 Ft felhasználva</Text>
+              </View>
+              <View style={styles.categoryProgress}>
+                <View style={styles.progressBar}>
+                  <View 
+                    style={[
+                      styles.progressFill, 
+                      { width: '49%', backgroundColor: COLORS.familybudget.entertainment }
+                    ]} 
+                  />
+                </View>
+                <Text style={styles.progressText}>49%</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
         {/* Quick Actions */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Gyors műveletek</Text>
@@ -387,6 +507,65 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     color: '#374151',
+  },
+  budgetPlanContainer: {
+    gap: 12,
+  },
+  budgetCategoryCard: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  categoryIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  categoryInfo: {
+    flex: 1,
+  },
+  categoryName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  categoryDetails: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  categoryAmount: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  categoryBudget: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  categorySpent: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  categoryProgress: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
 });
 

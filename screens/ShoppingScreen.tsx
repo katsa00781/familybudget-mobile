@@ -13,15 +13,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-
-// Auth context mock for development
-const useAuth = () => {
-  // Statikus mock user objektum a végtelen renderelés elkerülésére
-  const mockUser = { id: 'mock-user-id' };
-  return {
-    user: mockUser,
-  };
-};
+import { useAuth } from '../context/AuthContext';
 
 interface ShoppingItem {
   id: string;
