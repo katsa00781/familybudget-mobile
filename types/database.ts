@@ -3,6 +3,12 @@ export interface UserProfile {
   email: string;
   full_name?: string;
   display_name?: string;
+  phone?: string;
+  address?: string;
+  birth_date?: string;
+  avatar_url?: string;
+  bio?: string;
+  family_id: string; // Családi csoportosításhoz
   created_at: string;
   updated_at: string;
 }

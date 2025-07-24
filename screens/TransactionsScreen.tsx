@@ -1,358 +1,300 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
-  Alert,
-  TextInput,
   Modal,
-  ActivityIndicator,
+  TextInput,
+  Alert,
+  ScrollView,
+  SafeAreaView,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../context/AuthContext';
-import { supabase } from '../lib/supabase';
+import { LinearGradient } from 'expo-linear-gradient';
 
 interface Transaction {
   id: string;
   amount: number;
-  description: string;
   category: string;
-  type: 'income' | 'expense';
+  description: string;
   date: string;
-  created_at: string;
+  type: 'income' | 'expense';
+  user_name?: string;
 }
 
-export default function TransactionsScreen() {
-  const { user } = useAuth();
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [filterModalVisible, setFilterModalVisible] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedType, setSelectedType] = useState<'all' | 'income' | 'expense'>('all');
+const categories = {
+  income: ['Fizetés', 'Jutalom', 'Befektetés', 'Egyéb bevétel'],
+  expense: ['Élelmiszer', 'Lakás', 'Közlekedés', 'Szórakozás', 'Egészségügy', 'Oktatás', 'Ruházat', 'Egyéb']
+};
 
-  // Új tranzakció form
-  const [newTransaction, setNewTransaction] = useState({
+const categoryIcons: { [key: string]: string } = {
+  'Fizetés': 'cash',
+  'Jutalom': 'gift',
+  'Befektetés': 'trending-up',
+  'Egyéb bevétel': 'add-circle',
+  'Élelmiszer': 'fast-food',
+  'Lakás': 'home',
+  'Közlekedés': 'car',
+  'Szórakozás': 'game-controller',
+  'Egészségügy': 'medical',
+  'Oktatás': 'school',
+  'Ruházat': 'shirt',
+  'Egyéb': 'ellipsis-horizontal'
+};
+
+export default function TransactionsScreen() {
+  const [transactions, setTransactions] = useState<Transaction[]>([
+    {
+      id: '1',
+      amount: 250000,
+      category: 'Fizetés',
+      description: 'Havi fizetés',
+      date: '2024-01-15',
+      type: 'income',
+      user_name: 'Kovács János'
+    },
+    {
+      id: '2',
+      amount: -45000,
+      category: 'Élelmiszer',
+      description: 'Heti bevásárlás',
+      date: '2024-01-14',
+      type: 'expense',
+      user_name: 'Nagy Anna'
+    },
+    {
+      id: '3',
+      amount: -12000,
+      category: 'Közlekedés',
+      description: 'Benzin',
+      date: '2024-01-13',
+      type: 'expense',
+      user_name: 'Kovács János'
+    },
+    {
+      id: '4',
+      amount: -8500,
+      category: 'Szórakozás',
+      description: 'Mozi jegyek',
+      date: '2024-01-12',
+      type: 'expense',
+      user_name: 'Nagy Anna'
+    },
+    {
+      id: '5',
+      amount: 50000,
+      category: 'Jutalom',
+      description: 'Prémium',
+      date: '2024-01-10',
+      type: 'income',
+      user_name: 'Kovács János'
+    }
+  ]);
+
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
+  const [formData, setFormData] = useState({
     amount: '',
+    category: '',
     description: '',
-    category: 'food',
-    type: 'expense' as 'income' | 'expense',
+    type: 'expense' as 'income' | 'expense'
   });
 
-  const categories = [
-    { key: 'food', label: 'Élelmiszer', icon: 'restaurant-outline', color: '#10b981' },
-    { key: 'transport', label: 'Közlekedés', icon: 'car-outline', color: '#3b82f6' },
-    { key: 'housing', label: 'Lakhatás', icon: 'home-outline', color: '#8b5cf6' },
-    { key: 'healthcare', label: 'Egészség', icon: 'medical-outline', color: '#ef4444' },
-    { key: 'entertainment', label: 'Szórakozás', icon: 'game-controller-outline', color: '#f59e0b' },
-    { key: 'shopping', label: 'Vásárlás', icon: 'bag-outline', color: '#ec4899' },
-    { key: 'education', label: 'Oktatás', icon: 'school-outline', color: '#06b6d4' },
-    { key: 'salary', label: 'Fizetés', icon: 'card-outline', color: '#10b981' },
-    { key: 'other', label: 'Egyéb', icon: 'ellipsis-horizontal-outline', color: '#64748b' },
-  ];
-
-  useEffect(() => {
-    if (user) {
-      loadTransactions();
-    }
-  }, [user]);
-
-  const loadTransactions = async () => {
-    if (!user) return;
-
-    try {
-      setIsLoading(true);
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      if (error) throw error;
-      setTransactions(data || []);
-    } catch (error) {
-      console.error('Error loading transactions:', error);
-      Alert.alert('Hiba', 'Nem sikerült betölteni a tranzakciókat');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const addTransaction = async () => {
-    if (!user) {
-      Alert.alert('Hiba', 'Be kell jelentkezned!');
-      return;
-    }
-
-    if (!newTransaction.amount || !newTransaction.description.trim()) {
-      Alert.alert('Hiba', 'Töltsd ki az összes mezőt!');
-      return;
-    }
-
-    try {
-      const amount = parseFloat(newTransaction.amount);
-      
-      const { error } = await supabase
-        .from('transactions')
-        .insert({
-          user_id: user.id,
-          amount: amount,
-          description: newTransaction.description.trim(),
-          category: newTransaction.category,
-          type: newTransaction.type,
-          date: new Date().toISOString().split('T')[0],
-        });
-
-      if (error) throw error;
-
-      Alert.alert('Siker', 'Tranzakció hozzáadva!');
-      setNewTransaction({ amount: '', description: '', category: 'food', type: 'expense' });
-      setModalVisible(false);
-      loadTransactions();
-    } catch (error) {
-      console.error('Error adding transaction:', error);
-      Alert.alert('Hiba', 'Nem sikerült hozzáadni a tranzakciót');
-    }
-  };
-
-  const deleteTransaction = async (transactionId: string) => {
-    Alert.alert(
-      'Törlés megerősítése',
-      'Biztosan törölni szeretnéd ezt a tranzakciót?',
-      [
-        { text: 'Mégse', style: 'cancel' },
-        {
-          text: 'Törlés',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from('transactions')
-                .delete()
-                .eq('id', transactionId);
-
-              if (error) throw error;
-              loadTransactions();
-            } catch (error) {
-              console.error('Error deleting transaction:', error);
-              Alert.alert('Hiba', 'Nem sikerült törölni a tranzakciót');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const getFilteredTransactions = () => {
-    let filtered = transactions;
-
-    if (selectedType !== 'all') {
-      filtered = filtered.filter(t => t.type === selectedType);
-    }
-
-    if (selectedCategory !== 'all') {
-      filtered = filtered.filter(t => t.category === selectedCategory);
-    }
-
-    return filtered;
-  };
-
-  const getTotalIncome = () => {
-    return getFilteredTransactions()
-      .filter(t => t.type === 'income')
-      .reduce((sum, t) => sum + t.amount, 0);
-  };
-
-  const getTotalExpenses = () => {
-    return getFilteredTransactions()
-      .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + t.amount, 0);
-  };
-
-  const getBalance = () => {
-    return getTotalIncome() - getTotalExpenses();
-  };
-
-  const getCategoryInfo = (categoryKey: string) => {
-    return categories.find(c => c.key === categoryKey) || categories[categories.length - 1];
-  };
-
-  const formatCurrency = (amount: number) => {
+  const formatAmount = (amount: number) => {
     return new Intl.NumberFormat('hu-HU', {
       style: 'currency',
       currency: 'HUF',
       minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
+    }).format(Math.abs(amount));
   };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('hu-HU', {
       month: 'short',
-      day: 'numeric',
+      day: 'numeric'
     });
   };
 
-  const getActiveFiltersText = () => {
-    const filters = [];
-    if (selectedType !== 'all') {
-      filters.push(selectedType === 'income' ? 'Bevételek' : 'Kiadások');
-    }
-    if (selectedCategory !== 'all') {
-      const category = getCategoryInfo(selectedCategory);
-      filters.push(category.label);
-    }
-    return filters.length > 0 ? filters.join(', ') : 'Minden tranzakció';
+  const filteredTransactions = transactions.filter(transaction => {
+    if (filterType === 'all') return true;
+    return transaction.type === filterType;
+  });
+
+  const openAddModal = () => {
+    setEditingTransaction(null);
+    setFormData({
+      amount: '',
+      category: '',
+      description: '',
+      type: 'expense'
+    });
+    setModalVisible(true);
   };
 
-  if (isLoading) {
-    return (
-      <LinearGradient
-        colors={['#22D3EE', '#14B8A6', '#22C55E']}
-        style={styles.container}
-      >
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#ffffff" />
-          <Text style={styles.loadingText}>Betöltés...</Text>
-        </View>
-      </LinearGradient>
-    );
-  }
+  const openEditModal = (transaction: Transaction) => {
+    setEditingTransaction(transaction);
+    setFormData({
+      amount: Math.abs(transaction.amount).toString(),
+      category: transaction.category,
+      description: transaction.description,
+      type: transaction.type
+    });
+    setModalVisible(true);
+  };
 
-  const filteredTransactions = getFilteredTransactions();
+  const handleSave = () => {
+    if (!formData.amount || !formData.category || !formData.description) {
+      Alert.alert('Hiba', 'Kérjük töltse ki az összes mezőt!');
+      return;
+    }
+
+    const amount = parseFloat(formData.amount);
+    if (isNaN(amount) || amount <= 0) {
+      Alert.alert('Hiba', 'Kérjük adjon meg érvényes összeget!');
+      return;
+    }
+
+    const finalAmount = formData.type === 'expense' ? -amount : amount;
+
+    if (editingTransaction) {
+      // Edit existing transaction
+      setTransactions(prev =>
+        prev.map(t =>
+          t.id === editingTransaction.id
+            ? {
+                ...t,
+                amount: finalAmount,
+                category: formData.category,
+                description: formData.description,
+                type: formData.type
+              }
+            : t
+        )
+      );
+    } else {
+      // Add new transaction
+      const newTransaction: Transaction = {
+        id: Date.now().toString(),
+        amount: finalAmount,
+        category: formData.category,
+        description: formData.description,
+        date: new Date().toISOString().split('T')[0],
+        type: formData.type,
+        user_name: 'Jelenlegi felhasználó'
+      };
+      setTransactions(prev => [newTransaction, ...prev]);
+    }
+
+    setModalVisible(false);
+  };
+
+  const handleDelete = (transactionId: string) => {
+    Alert.alert(
+      'Tranzakció törlése',
+      'Biztosan törölni szeretné ezt a tranzakciót?',
+      [
+        { text: 'Mégse', style: 'cancel' },
+        {
+          text: 'Törlés',
+          style: 'destructive',
+          onPress: () => {
+            setTransactions(prev => prev.filter(t => t.id !== transactionId));
+          }
+        }
+      ]
+    );
+  };
+
+  const renderTransaction = ({ item }: { item: Transaction }) => (
+    <TouchableOpacity
+      style={styles.transactionCard}
+      onPress={() => openEditModal(item)}
+    >
+      <View style={styles.transactionLeft}>
+        <View style={[
+          styles.categoryIcon,
+          { backgroundColor: item.type === 'income' ? '#E8F5E8' : '#FFE8E8' }
+        ]}>
+          <Ionicons
+            name={categoryIcons[item.category] as any || 'ellipsis-horizontal'}
+            size={20}
+            color={item.type === 'income' ? '#4CAF50' : '#F44336'}
+          />
+        </View>
+        <View style={styles.transactionInfo}>
+          <Text style={styles.transactionDescription}>{item.description}</Text>
+          <Text style={styles.transactionCategory}>{item.category}</Text>
+          <Text style={styles.transactionUser}>{item.user_name}</Text>
+        </View>
+      </View>
+      <View style={styles.transactionRight}>
+        <Text style={[
+          styles.transactionAmount,
+          { color: item.type === 'income' ? '#4CAF50' : '#F44336' }
+        ]}>
+          {item.type === 'income' ? '+' : ''}{formatAmount(item.amount)}
+        </Text>
+        <Text style={styles.transactionDate}>{formatDate(item.date)}</Text>
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={() => handleDelete(item.id)}
+        >
+          <Ionicons name="trash-outline" size={16} color="#FF6B6B" />
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
 
   return (
-    <LinearGradient
-      colors={['#22D3EE', '#14B8A6', '#22C55E']}
-      style={styles.container}
-    >
-      <ScrollView style={styles.scrollContent}>
-      {/* Header */}
-      <View style={styles.header}>
+    <SafeAreaView style={styles.container}>
+      <LinearGradient
+        colors={['#667eea', '#764ba2']}
+        style={styles.header}
+      >
         <Text style={styles.title}>Tranzakciók</Text>
-        <Text style={styles.subtitle}>Kövesd nyomon bevételeidet és kiadásaidat</Text>
-      </View>
-
-      {/* Összesítő kártyák */}
-      <View style={styles.summaryContainer}>
-        <View style={[styles.summaryCard, { backgroundColor: '#dcfce7' }]}>
-          <Ionicons name="trending-up-outline" size={24} color="#16a34a" />
-          <Text style={[styles.summaryAmount, { color: '#16a34a' }]}>
-            {formatCurrency(getTotalIncome())}
-          </Text>
-          <Text style={styles.summaryLabel}>Bevételek</Text>
-        </View>
-        
-        <View style={[styles.summaryCard, { backgroundColor: '#fecaca' }]}>
-          <Ionicons name="trending-down-outline" size={24} color="#dc2626" />
-          <Text style={[styles.summaryAmount, { color: '#dc2626' }]}>
-            {formatCurrency(getTotalExpenses())}
-          </Text>
-          <Text style={styles.summaryLabel}>Kiadások</Text>
-        </View>
-        
-        <View style={[styles.summaryCard, { backgroundColor: getBalance() >= 0 ? '#dbeafe' : '#fee2e2' }]}>
-          <Ionicons name="wallet-outline" size={24} color={getBalance() >= 0 ? '#2563eb' : '#dc2626'} />
-          <Text style={[styles.summaryAmount, { color: getBalance() >= 0 ? '#2563eb' : '#dc2626' }]}>
-            {formatCurrency(getBalance())}
-          </Text>
-          <Text style={styles.summaryLabel}>Egyenleg</Text>
-        </View>
-      </View>
-
-      {/* Gyors műveletek */}
-      <View style={styles.actionsContainer}>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => setModalVisible(true)}
-        >
-          <Ionicons name="add-outline" size={20} color="white" />
-          <Text style={styles.addButtonText}>Új tranzakció</Text>
+        <TouchableOpacity style={styles.addButton} onPress={openAddModal}>
+          <Ionicons name="add" size={24} color="white" />
         </TouchableOpacity>
-        
+      </LinearGradient>
+
+      <View style={styles.filterContainer}>
         <TouchableOpacity
-          style={styles.filterButton}
-          onPress={() => setFilterModalVisible(true)}
+          style={[styles.filterButton, filterType === 'all' && styles.activeFilter]}
+          onPress={() => setFilterType('all')}
         >
-          <Ionicons name="filter-outline" size={20} color="#0891b2" />
-          <Text style={styles.filterButtonText}>Szűrés</Text>
+          <Text style={[styles.filterText, filterType === 'all' && styles.activeFilterText]}>
+            Összes
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterButton, filterType === 'income' && styles.activeFilter]}
+          onPress={() => setFilterType('income')}
+        >
+          <Text style={[styles.filterText, filterType === 'income' && styles.activeFilterText]}>
+            Bevételek
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterButton, filterType === 'expense' && styles.activeFilter]}
+          onPress={() => setFilterType('expense')}
+        >
+          <Text style={[styles.filterText, filterType === 'expense' && styles.activeFilterText]}>
+            Kiadások
+          </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Aktív szűrők */}
-      <View style={styles.activeFiltersContainer}>
-        <Text style={styles.activeFiltersText}>{getActiveFiltersText()}</Text>
-        {(selectedType !== 'all' || selectedCategory !== 'all') && (
-          <TouchableOpacity
-            onPress={() => {
-              setSelectedType('all');
-              setSelectedCategory('all');
-            }}
-            style={styles.clearFiltersButton}
-          >
-            <Text style={styles.clearFiltersText}>Szűrők törlése</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      <FlatList
+        data={filteredTransactions}
+        renderItem={renderTransaction}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.transactionsList}
+        showsVerticalScrollIndicator={false}
+      />
 
-      {/* Tranzakciók lista */}
-      <ScrollView style={styles.transactionsList} showsVerticalScrollIndicator={false}>
-        {filteredTransactions.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="receipt-outline" size={64} color="#cbd5e1" />
-            <Text style={styles.emptyTitle}>Nincsenek tranzakciók</Text>
-            <Text style={styles.emptyText}>
-              {selectedType !== 'all' || selectedCategory !== 'all' 
-                ? 'A kiválasztott szűrőknek megfelelő tranzakciók nem találhatók.'
-                : 'Hozd létre az első tranzakciódat!'
-              }
-            </Text>
-          </View>
-        ) : (
-          filteredTransactions.map((transaction) => {
-            const categoryInfo = getCategoryInfo(transaction.category);
-            return (
-              <View key={transaction.id} style={styles.transactionCard}>
-                <View style={styles.transactionLeft}>
-                  <View style={[styles.categoryIcon, { backgroundColor: `${categoryInfo.color}20` }]}>
-                    <Ionicons 
-                      name={categoryInfo.icon as keyof typeof Ionicons.glyphMap} 
-                      size={20} 
-                      color={categoryInfo.color} 
-                    />
-                  </View>
-                  <View style={styles.transactionInfo}>
-                    <Text style={styles.transactionDescription}>{transaction.description}</Text>
-                    <Text style={styles.transactionCategory}>{categoryInfo.label}</Text>
-                    <Text style={styles.transactionDate}>{formatDate(transaction.date)}</Text>
-                  </View>
-                </View>
-                
-                <View style={styles.transactionRight}>
-                  <Text style={[
-                    styles.transactionAmount,
-                    { color: transaction.type === 'income' ? '#16a34a' : '#dc2626' }
-                  ]}>
-                    {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.amount)}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => deleteTransaction(transaction.id)}
-                    style={styles.deleteButton}
-                  >
-                    <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            );
-          })
-        )}
-      </ScrollView>
-
-      {/* Új tranzakció modal */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -361,355 +303,174 @@ export default function TransactionsScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Új tranzakció</Text>
-            
-            {/* Típus választó */}
-            <View style={styles.typeContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.typeButton,
-                  newTransaction.type === 'income' && styles.typeButtonActive,
-                  { backgroundColor: newTransaction.type === 'income' ? '#16a34a' : '#f1f5f9' }
-                ]}
-                onPress={() => setNewTransaction({ ...newTransaction, type: 'income' })}
-              >
-                <Ionicons 
-                  name="trending-up-outline" 
-                  size={20} 
-                  color={newTransaction.type === 'income' ? 'white' : '#16a34a'} 
-                />
-                <Text style={[
-                  styles.typeButtonText,
-                  { color: newTransaction.type === 'income' ? 'white' : '#16a34a' }
-                ]}>
-                  Bevétel
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[
-                  styles.typeButton,
-                  newTransaction.type === 'expense' && styles.typeButtonActive,
-                  { backgroundColor: newTransaction.type === 'expense' ? '#dc2626' : '#f1f5f9' }
-                ]}
-                onPress={() => setNewTransaction({ ...newTransaction, type: 'expense' })}
-              >
-                <Ionicons 
-                  name="trending-down-outline" 
-                  size={20} 
-                  color={newTransaction.type === 'expense' ? 'white' : '#dc2626'} 
-                />
-                <Text style={[
-                  styles.typeButtonText,
-                  { color: newTransaction.type === 'expense' ? 'white' : '#dc2626' }
-                ]}>
-                  Kiadás
-                </Text>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {editingTransaction ? 'Tranzakció szerkesztése' : 'Új tranzakció'}
+              </Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
-            
-            <TextInput
-              style={styles.input}
-              placeholder="Összeg (Ft)"
-              value={newTransaction.amount}
-              onChangeText={(text) => setNewTransaction({ ...newTransaction, amount: text })}
-              keyboardType="numeric"
-            />
-            
-            <TextInput
-              style={styles.input}
-              placeholder="Leírás"
-              value={newTransaction.description}
-              onChangeText={(text) => setNewTransaction({ ...newTransaction, description: text })}
-            />
 
-            {/* Kategória választó */}
-            <Text style={styles.categoryLabel}>Kategória:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-              {categories.map((category) => (
+            <ScrollView style={styles.modalBody}>
+              <View style={styles.typeSelector}>
                 <TouchableOpacity
-                  key={category.key}
                   style={[
-                    styles.categoryOption,
-                    newTransaction.category === category.key && styles.categoryOptionSelected,
-                    { borderColor: category.color }
+                    styles.typeButton,
+                    formData.type === 'income' && styles.activeIncomeType
                   ]}
-                  onPress={() => setNewTransaction({ ...newTransaction, category: category.key })}
+                  onPress={() => setFormData(prev => ({ ...prev, type: 'income', category: '' }))}
                 >
-                  <Ionicons 
-                    name={category.icon as keyof typeof Ionicons.glyphMap} 
-                    size={20} 
-                    color={newTransaction.category === category.key ? 'white' : category.color} 
-                  />
                   <Text style={[
-                    styles.categoryOptionText,
-                    newTransaction.category === category.key && { color: 'white' }
+                    styles.typeButtonText,
+                    formData.type === 'income' && styles.activeTypeText
                   ]}>
-                    {category.label}
+                    Bevétel
                   </Text>
                 </TouchableOpacity>
-              ))}
+                <TouchableOpacity
+                  style={[
+                    styles.typeButton,
+                    formData.type === 'expense' && styles.activeExpenseType
+                  ]}
+                  onPress={() => setFormData(prev => ({ ...prev, type: 'expense', category: '' }))}
+                >
+                  <Text style={[
+                    styles.typeButtonText,
+                    formData.type === 'expense' && styles.activeTypeText
+                  ]}>
+                    Kiadás
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Összeg (Ft)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.amount}
+                  onChangeText={(text) => setFormData(prev => ({ ...prev, amount: text }))}
+                  placeholder="0"
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Kategória</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.categorySelector}>
+                    {categories[formData.type].map((category) => (
+                      <TouchableOpacity
+                        key={category}
+                        style={[
+                          styles.categoryOption,
+                          formData.category === category && styles.activeCategoryOption
+                        ]}
+                        onPress={() => setFormData(prev => ({ ...prev, category }))}
+                      >
+                        <Ionicons
+                          name={categoryIcons[category] as any || 'ellipsis-horizontal'}
+                          size={20}
+                          color={formData.category === category ? 'white' : '#666'}
+                        />
+                        <Text style={[
+                          styles.categoryOptionText,
+                          formData.category === category && styles.activeCategoryText
+                        ]}>
+                          {category}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Leírás</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.description}
+                  onChangeText={(text) => setFormData(prev => ({ ...prev, description: text }))}
+                  placeholder="Tranzakció leírása"
+                  multiline
+                />
+              </View>
             </ScrollView>
 
-            <View style={styles.modalButtons}>
+            <View style={styles.modalFooter}>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
+                style={styles.cancelButton}
                 onPress={() => setModalVisible(false)}
               >
                 <Text style={styles.cancelButtonText}>Mégse</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalButton, styles.createButton]}
-                onPress={addTransaction}
+                style={styles.saveButton}
+                onPress={handleSave}
               >
-                <Text style={styles.createButtonText}>Hozzáadás</Text>
+                <Text style={styles.saveButtonText}>Mentés</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-
-      {/* Szűrés modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={filterModalVisible}
-        onRequestClose={() => setFilterModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Szűrés</Text>
-            
-            <Text style={styles.filterSectionTitle}>Típus:</Text>
-            <View style={styles.filterOptions}>
-              {[
-                { key: 'all', label: 'Minden' },
-                { key: 'income', label: 'Bevételek' },
-                { key: 'expense', label: 'Kiadások' },
-              ].map((option) => (
-                <TouchableOpacity
-                  key={option.key}
-                  style={[
-                    styles.filterOption,
-                    selectedType === option.key && styles.filterOptionSelected
-                  ]}
-                  onPress={() => setSelectedType(option.key as any)}
-                >
-                  <Text style={[
-                    styles.filterOptionText,
-                    selectedType === option.key && styles.filterOptionTextSelected
-                  ]}>
-                    {option.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.filterSectionTitle}>Kategória:</Text>
-            <View style={styles.filterOptions}>
-              <TouchableOpacity
-                style={[
-                  styles.filterOption,
-                  selectedCategory === 'all' && styles.filterOptionSelected
-                ]}
-                onPress={() => setSelectedCategory('all')}
-              >
-                <Text style={[
-                  styles.filterOptionText,
-                  selectedCategory === 'all' && styles.filterOptionTextSelected
-                ]}>
-                  Minden kategória
-                </Text>
-              </TouchableOpacity>
-              
-              {categories.map((category) => (
-                <TouchableOpacity
-                  key={category.key}
-                  style={[
-                    styles.filterOption,
-                    selectedCategory === category.key && styles.filterOptionSelected
-                  ]}
-                  onPress={() => setSelectedCategory(category.key)}
-                >
-                  <Ionicons 
-                    name={category.icon as keyof typeof Ionicons.glyphMap} 
-                    size={16} 
-                    color={selectedCategory === category.key ? 'white' : category.color} 
-                  />
-                  <Text style={[
-                    styles.filterOptionText,
-                    selectedCategory === category.key && styles.filterOptionTextSelected
-                  ]}>
-                    {category.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setFilterModalVisible(false)}
-              >
-                <Text style={styles.cancelButtonText}>Mégse</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.createButton]}
-                onPress={() => setFilterModalVisible(false)}
-              >
-                <Text style={styles.createButtonText}>Alkalmaz</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-      </ScrollView>
-    </LinearGradient>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  scrollContent: {
-    flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#ffffff',
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
+    backgroundColor: '#f8f9fa',
   },
   header: {
-    padding: 16,
-    paddingTop: 8,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    textAlign: 'center',
-    marginBottom: 8,
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#ffffff',
-    textAlign: 'center',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
-  },
-  summaryContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  summaryCard: {
-    flex: 1,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginHorizontal: 4,
-  },
-  summaryAmount: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginTop: 4,
-    marginBottom: 2,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  actionsContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  addButton: {
-    flex: 1,
-    backgroundColor: '#0891b2',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  addButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  filterButton: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
-    borderWidth: 1,
-    borderColor: '#0891b2',
-  },
-  filterButtonText: {
-    color: '#0891b2',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  activeFiltersContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    marginBottom: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    paddingTop: 40,
   },
-  activeFiltersText: {
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  addButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 20,
+    padding: 8,
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    padding: 20,
+    gap: 10,
+  },
+  filterButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: 'white',
+    alignItems: 'center',
+  },
+  activeFilter: {
+    backgroundColor: '#667eea',
+    borderColor: '#667eea',
+  },
+  filterText: {
     fontSize: 14,
-    color: '#64748b',
+    fontWeight: '500',
+    color: '#666',
   },
-  clearFiltersButton: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-  },
-  clearFiltersText: {
-    fontSize: 12,
-    color: '#0891b2',
-    textDecorationLine: 'underline',
+  activeFilterText: {
+    color: 'white',
   },
   transactionsList: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#0f172a',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#64748b',
-    textAlign: 'center',
-    paddingHorizontal: 32,
+    padding: 20,
+    paddingTop: 0,
   },
   transactionCard: {
     backgroundColor: 'white',
@@ -719,11 +480,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.1,
     shadowRadius: 2,
-    elevation: 2,
   },
   transactionLeft: {
     flexDirection: 'row',
@@ -734,8 +495,8 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 12,
   },
   transactionInfo: {
@@ -743,18 +504,18 @@ const styles = StyleSheet.create({
   },
   transactionDescription: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#0f172a',
-    marginBottom: 2,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
   },
   transactionCategory: {
     fontSize: 12,
-    color: '#64748b',
+    color: '#666',
     marginBottom: 2,
   },
-  transactionDate: {
-    fontSize: 12,
-    color: '#94a3b8',
+  transactionUser: {
+    fontSize: 11,
+    color: '#999',
   },
   transactionRight: {
     alignItems: 'flex-end',
@@ -762,7 +523,12 @@ const styles = StyleSheet.create({
   transactionAmount: {
     fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 8,
+    marginBottom: 4,
+  },
+  transactionDate: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
   },
   deleteButton: {
     padding: 4,
@@ -776,128 +542,129 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    padding: 24,
-    maxHeight: '80%',
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#0f172a',
-    textAlign: 'center',
-    marginBottom: 24,
+    color: '#333',
   },
-  typeContainer: {
+  modalBody: {
+    padding: 20,
+  },
+  typeSelector: {
     flexDirection: 'row',
-    marginBottom: 24,
+    marginBottom: 20,
+    gap: 10,
   },
   typeButton: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     paddingVertical: 12,
-    borderRadius: 8,
-    marginHorizontal: 4,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    alignItems: 'center',
   },
-  typeButtonActive: {
-    // backgroundColor will be set dynamically
+  activeIncomeType: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  activeExpenseType: {
+    backgroundColor: '#F44336',
+    borderColor: '#F44336',
   },
   typeButtonText: {
     fontSize: 14,
     fontWeight: '500',
-    marginLeft: 8,
+    color: '#666',
+  },
+  activeTypeText: {
+    color: 'white',
+  },
+  inputContainer: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 8,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
+    borderColor: '#ddd',
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    marginBottom: 16,
+    backgroundColor: 'white',
   },
-  categoryLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#0f172a',
-    marginBottom: 12,
-  },
-  categoryScroll: {
-    marginBottom: 24,
+  categorySelector: {
+    flexDirection: 'row',
+    gap: 10,
   },
   categoryOption: {
-    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderWidth: 1,
+    padding: 12,
     borderRadius: 8,
-    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: 'white',
     minWidth: 80,
   },
-  categoryOptionSelected: {
-    backgroundColor: '#0891b2',
-    borderColor: '#0891b2',
+  activeCategoryOption: {
+    backgroundColor: '#667eea',
+    borderColor: '#667eea',
   },
   categoryOptionText: {
     fontSize: 12,
-    marginLeft: 4,
-    color: '#64748b',
+    color: '#666',
+    marginTop: 4,
+    textAlign: 'center',
   },
-  filterSectionTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#0f172a',
-    marginBottom: 12,
-    marginTop: 8,
-  },
-  filterOptions: {
-    marginBottom: 24,
-  },
-  filterOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  filterOptionSelected: {
-    backgroundColor: '#0891b2',
-    borderColor: '#0891b2',
-  },
-  filterOptionText: {
-    fontSize: 14,
-    color: '#64748b',
-    marginLeft: 8,
-  },
-  filterOptionTextSelected: {
+  activeCategoryText: {
     color: 'white',
   },
-  modalButtons: {
+  modalFooter: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginHorizontal: 8,
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    gap: 10,
   },
   cancelButton: {
-    backgroundColor: '#f1f5f9',
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    alignItems: 'center',
   },
   cancelButtonText: {
-    color: '#64748b',
+    fontSize: 16,
     fontWeight: '500',
+    color: '#666',
   },
-  createButton: {
-    backgroundColor: '#0891b2',
+  saveButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: '#667eea',
+    alignItems: 'center',
   },
-  createButtonText: {
+  saveButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
     color: 'white',
-    fontWeight: '500',
   },
 });

@@ -218,13 +218,7 @@ export default function HomeScreen({ navigation }: any) {
   };
 
   const navigateToTransactions = () => {
-    // navigation.navigate('TransactionsScreen');
-    Alert.alert('Fejlesztés alatt', 'A tranzakciók képernyő hamarosan elérhető lesz!');
-  };
-
-  const navigateToFamilyMembers = () => {
-    // navigation.navigate('FamilyMembersScreen');
-    Alert.alert('Fejlesztés alatt', 'A családtagok képernyő hamarosan elérhető lesz!');
+    navigation.navigate('TransactionsScreen');
   };
 
   const navigateToBudget = () => {
@@ -293,7 +287,7 @@ export default function HomeScreen({ navigation }: any) {
               {renderQuickAction('Tranzakció', 'add-circle', '#14B8A6', navigateToTransactions)}
               {renderQuickAction('Költségvetés', 'calculator', '#8B5CF6', navigateToBudget)}
               {renderQuickAction('Megtakarítás', 'wallet', '#F59E0B', navigateToSavings)}
-              {renderQuickAction('Családtagok', 'people', '#EC4899', navigateToFamilyMembers)}
+              {renderQuickAction('Bevásárlás', 'basket', '#EF4444', navigateToShopping)}
             </View>
           </View>
 

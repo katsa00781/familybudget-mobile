@@ -13,7 +13,9 @@ import ProfileScreen from '../screens/ProfileScreen';
 import BudgetScreen from '../screens/BudgetScreen';
 import SavingsScreen from '../screens/SavingsScreen';
 import ShoppingScreen from '../screens/ShoppingScreen';
-import SalaryCalculatorScreen from '../screens/SalaryCalculatorScreen';
+import SalaryScreen from '../screens/SalaryScreen';
+import TransactionsScreen from '../screens/TransactionsScreen';
+import FamilyMembersScreen from '../screens/FamilyMembersScreen';
 
 const Stack = createStackNavigator<any>();
 const Tab = createBottomTabNavigator<any>();
@@ -53,8 +55,10 @@ function MainTabs() {
             iconName = focused ? 'home' : 'home-outline';
           } else if (route.name === 'Költségvetés') {
             iconName = focused ? 'calculator' : 'calculator-outline';
-          } else if (route.name === 'Bevásárlólista') {
-            iconName = focused ? 'basket' : 'basket-outline';
+          } else if (route.name === 'Tranzakciók') {
+            iconName = focused ? 'list' : 'list-outline';
+          } else if (route.name === 'Bérkalkulátor') {
+            iconName = focused ? 'cash' : 'cash-outline';
           } else if (route.name === 'Megtakarítások') {
             iconName = focused ? 'wallet' : 'wallet-outline';
           } else if (route.name === 'Profil') {
@@ -94,11 +98,19 @@ function MainTabs() {
         }}
       />
       <Tab.Screen 
-        name="Bevásárlólista" 
-        component={ShoppingScreen}
+        name="Tranzakciók" 
+        component={TransactionsScreen}
         options={{
-          tabBarLabel: 'Bevásárlás',
-          headerTitle: 'Bevásárlólisták',
+          tabBarLabel: 'Tranzakciók',
+          headerTitle: 'Tranzakciók',
+        }}
+      />
+      <Tab.Screen 
+        name="Bérkalkulátor" 
+        component={SalaryScreen}
+        options={{
+          tabBarLabel: 'Bér',
+          headerTitle: 'Bérkalkulátor',
         }}
       />
       <Tab.Screen 
@@ -138,7 +150,15 @@ export default function AppNavigator() {
           <Stack.Screen name="MainTabs" component={MainTabs} />
           <Stack.Screen 
             name="SalaryCalculator" 
-            component={SalaryCalculatorScreen}
+            component={SalaryScreen}
+            options={{
+              presentation: 'modal',
+              headerShown: false,
+            }}
+          />
+          <Stack.Screen 
+            name="FamilyMembers" 
+            component={FamilyMembersScreen}
             options={{
               presentation: 'modal',
               headerShown: false,
