@@ -13,9 +13,10 @@ import ProfileScreen from '../screens/ProfileScreen';
 import BudgetScreen from '../screens/BudgetScreen';
 import SavingsScreen from '../screens/SavingsScreen';
 import ShoppingScreen from '../screens/ShoppingScreen';
+import SalaryCalculatorScreen from '../screens/SalaryCalculatorScreen';
 
-const Stack = createStackNavigator();
-const Tab = createBottomTabNavigator();
+const Stack = createStackNavigator<any>();
+const Tab = createBottomTabNavigator<any>();
 
 function LoadingScreen() {
   return (
@@ -129,7 +130,24 @@ export default function AppNavigator() {
 
   return (
     <NavigationContainer>
-      {user ? <MainTabs /> : <AuthStack />}
+      {user ? (
+        <Stack.Navigator 
+          id={undefined}
+          screenOptions={{ headerShown: false }}
+        >
+          <Stack.Screen name="MainTabs" component={MainTabs} />
+          <Stack.Screen 
+            name="SalaryCalculator" 
+            component={SalaryCalculatorScreen}
+            options={{
+              presentation: 'modal',
+              headerShown: false,
+            }}
+          />
+        </Stack.Navigator>
+      ) : (
+        <AuthStack />
+      )}
     </NavigationContainer>
   );
 }

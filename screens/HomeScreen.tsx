@@ -76,7 +76,7 @@ interface CategoryData {
   color: string;
 }
 
-export default function HomeScreen() {
+export default function HomeScreen({ navigation }: any) {
   const { user, userProfile } = useAuth();
   const [dashboardData, setDashboardData] = useState<DashboardData>({
     totalIncome: 0,
@@ -380,7 +380,10 @@ export default function HomeScreen() {
       {/* Quick Actions */}
       <View style={styles.section}>
         <View style={styles.quickActionsGrid}>
-          <TouchableOpacity style={[styles.quickActionButton, { backgroundColor: '#00BCD4' }]}>
+          <TouchableOpacity 
+            style={[styles.quickActionButton, { backgroundColor: '#00BCD4' }]}
+            onPress={() => navigation.navigate('SalaryCalculator')}
+          >
             <Ionicons name="calculator-outline" size={24} color="white" />
             <Text style={styles.quickActionText}>Bérkalkulátor</Text>
           </TouchableOpacity>
