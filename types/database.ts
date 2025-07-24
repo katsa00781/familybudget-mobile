@@ -53,3 +53,45 @@ export interface Transaction {
   created_at: string;
   updated_at: string;
 }
+
+export interface Product {
+  id: string;
+  name: string;
+  category: string;
+  unit: string;
+  price: number; // Changed from average_price to price to match web app database
+  barcode?: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShoppingItem {
+  id: string;
+  shopping_list_id?: string;
+  product_id?: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  estimated_price: number;
+  actual_price?: number;
+  category: string;
+  checked: boolean;
+  created_at: string;
+}
+
+export interface ShoppingList {
+  id: string;
+  user_id: string;
+  family_id?: string;
+  name: string;
+  description?: string;
+  shopping_date: string;
+  store_name?: string;
+  items: ShoppingItem[];
+  estimated_total: number;
+  actual_total?: number;
+  completed: boolean;
+  created_at: string;
+  updated_at: string;
+}
