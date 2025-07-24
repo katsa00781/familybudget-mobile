@@ -71,14 +71,40 @@ const ShoppingScreen: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('Összes');
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingList, setEditingList] = useState<ShoppingList | null>(null);
+  
+  // JSON Import states
+  const [isJsonImportModalVisible, setIsJsonImportModalVisible] = useState(false);
+  const [jsonInput, setJsonInput] = useState('');
+  const [isJsonImporting, setIsJsonImporting] = useState(false);
+  
+  // Product management states
+  const [isProductModalVisible, setIsProductModalVisible] = useState(false);
+  const [newProductData, setNewProductData] = useState({
+    name: '',
+    brand: '',
+    category: 'Általános',
+    unit: 'db',
+    price: '',
+    barcode: '',
+    description: ''
+  });
+  const [isCategoryPickerVisible, setIsCategoryPickerVisible] = useState(false);
+  const [isUnitPickerVisible, setIsUnitPickerVisible] = useState(false);
 
   // Predefined categories
   const categories = [
     'Összes', 'Tejtermékek', 'Pékáruk', 'Húsok', 'Zöldségek', 'Gyümölcsök', 
-    'Italok', 'Fagyasztott', 'Konzervek', 'Tisztítószerek', 'Egyéb'
+    'Italok', 'Fagyasztott', 'Konzervek', 'Tisztítószerek', 'Kozmetikumok', 
+    'Gyógyszer', 'Egyéb'
   ];
 
-  const units = ['db', 'kg', 'liter', 'csomag', 'doboz'];
+  const productCategories = [
+    'Tejtermékek', 'Pékáruk', 'Húsok', 'Zöldségek', 'Gyümölcsök', 
+    'Italok', 'Fagyasztott', 'Konzervek', 'Tisztítószerek', 'Kozmetikumok', 
+    'Gyógyszer', 'Egyéb'
+  ];
+
+  const units = ['db', 'kg', 'g', 'liter', 'ml', 'csomag', 'doboz', 'üveg', 'tasak'];
 
   // Load data function
   const loadData = useCallback(async () => {
@@ -594,6 +620,214 @@ const ShoppingScreen: React.FC = () => {
     }).format(safeAmount);
   };
 
+  // JSON Import functionality based on web app
+  const importFromJson = async () => {
+    if (!user) {
+      Alert.alert('Hiba', 'Be kell jelentkezned a mentéshez!');
+      return;
+    }
+
+    if (!jsonInput.trim()) {
+      Alert.alert('Hiba', 'Add meg a JSON adatokat!');
+      return;
+    }
+
+    try {
+      setIsJsonImporting(true);
+      
+      const jsonData = JSON.parse(jsonInput);
+      
+      if (!Array.isArray(jsonData)) {
+        throw new Error('A JSON-nak tömbnek kell lennie!');
+      }
+
+      // Get existing products to check for duplicates
+      const { data: existingProducts, error: fetchError } = await supabase
+        .from('products')
+        .select('name, brand, barcode')
+        .eq('user_id', user.id);
+
+      if (fetchError) throw fetchError;
+
+      const productsToInsert: Array<{
+        user_id: string;
+        name: string;
+        brand?: string;
+        category: string;
+        unit: string;
+        price?: number;
+        barcode?: string;
+        description?: string;
+      }> = [];
+      const skippedProducts: string[] = [];
+
+      const existingProductsSet = new Set();
+
+      // Index existing products
+      existingProducts?.forEach(product => {
+        // Barcode-based uniqueness (if barcode exists)
+        if (product.barcode) {
+          existingProductsSet.add(`barcode:${product.barcode}`);
+        }
+        // Name + brand based uniqueness
+        const key = `${product.name}|${product.brand || ''}`.toLowerCase();
+        existingProductsSet.add(key);
+      });
+
+      jsonData.forEach((item: {
+        name?: string;
+        termek_neve?: string;
+        brand?: string;
+        marka?: string;
+        category?: string;
+        kategoria?: string;
+        price?: number;
+        ar?: number;
+        unit?: string;
+        egyseg?: string;
+        barcode?: string;
+        vonalkod?: string;
+        description?: string;
+        leiras?: string;
+      }) => {
+        const productName = item.name || item.termek_neve;
+        const productBrand = item.brand || item.marka || null;
+        const productBarcode = item.barcode || item.vonalkod || null;
+
+        if (!productName) {
+          skippedProducts.push('Névtelen termék');
+          return;
+        }
+
+        // Check for duplicates
+        let isDuplicate = false;
+        
+        // 1. Barcode-based check (if exists)
+        if (productBarcode && existingProductsSet.has(`barcode:${productBarcode}`)) {
+          isDuplicate = true;
+        }
+        
+        // 2. Name + brand based check
+        const nameKey = `${productName}|${productBrand || ''}`.toLowerCase();
+        if (existingProductsSet.has(nameKey)) {
+          isDuplicate = true;
+        }
+
+        if (isDuplicate) {
+          skippedProducts.push(productName);
+          return;
+        }
+
+        // Add new product to the list and index
+        productsToInsert.push({
+          user_id: user.id,
+          name: productName,
+          brand: productBrand,
+          category: item.category || item.kategoria || 'Egyéb',
+          unit: item.unit || item.egyseg || 'db',
+          price: item.price || item.ar || null,
+          barcode: productBarcode,
+          description: item.description || item.leiras || null,
+        });
+
+        // Add to index to avoid duplicates within the import
+        if (productBarcode) {
+          existingProductsSet.add(`barcode:${productBarcode}`);
+        }
+        existingProductsSet.add(nameKey);
+      });
+
+      // Execute import
+      if (productsToInsert.length > 0) {
+        const { error } = await supabase
+          .from('products')
+          .insert(productsToInsert);
+
+        if (error) throw error;
+      }
+
+      // Show results
+      let message = '';
+      if (productsToInsert.length > 0) {
+        message += `${productsToInsert.length} termék sikeresen importálva!`;
+      }
+      if (skippedProducts.length > 0) {
+        message += ` ${skippedProducts.length} termék kihagyva (már létezik).`;
+      }
+      if (productsToInsert.length === 0 && skippedProducts.length === 0) {
+        message = 'Nincs importálható termék!';
+      }
+
+      Alert.alert('Import eredmény', message);
+      setJsonInput('');
+      setIsJsonImportModalVisible(false);
+      loadData(); // Reload products
+
+    } catch (error) {
+      console.error('Hiba az importáláskor:', error);
+      Alert.alert('Hiba', 'Hiba történt az importálás során! Ellenőrizd a JSON formátumot.');
+    } finally {
+      setIsJsonImporting(false);
+    }
+  };
+
+  // Add new product to database
+  const addNewProduct = async () => {
+    if (!user) {
+      Alert.alert('Hiba', 'Be kell jelentkezned a mentéshez!');
+      return;
+    }
+
+    if (!newProductData.name.trim() || !newProductData.category) {
+      Alert.alert('Hiba', 'Add meg legalább a termék nevét és kategóriáját!');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      const productData = {
+        user_id: user.id,
+        name: newProductData.name.trim(),
+        brand: newProductData.brand.trim() || null,
+        category: newProductData.category,
+        unit: newProductData.unit,
+        price: newProductData.price ? parseInt(newProductData.price) : null,
+        barcode: newProductData.barcode.trim() || null,
+        description: newProductData.description.trim() || null,
+        created_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('products')
+        .insert([productData]);
+
+      if (error) throw error;
+
+      Alert.alert('Siker', 'Termék sikeresen hozzáadva az adatbázishoz!');
+      
+      // Reset form
+      setNewProductData({
+        name: '',
+        brand: '',
+        category: 'Általános',
+        unit: 'db',
+        price: '',
+        barcode: '',
+        description: ''
+      });
+      
+      setIsProductModalVisible(false);
+      loadData(); // Reload products
+      
+    } catch (error) {
+      console.error('Hiba a mentéskor:', error);
+      Alert.alert('Hiba', 'Hiba történt a mentés során!');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Render legacy predefined product item (for backward compatibility)
   const renderPredefinedProduct = (product: { name: string; category: string; unit: string; price: number }) => (
     <TouchableOpacity
@@ -777,6 +1011,34 @@ const ShoppingScreen: React.FC = () => {
                   <Text style={styles.refreshButtonText}>Termékek újratöltése</Text>
                 </TouchableOpacity>
               )}
+            </View>
+          </View>
+
+          {/* Product Management Section */}
+          <View style={styles.productManagementSection}>
+            <Text style={styles.sectionTitle}>Termék kezelés</Text>
+            <Text style={styles.sectionSubtitle}>
+              Új termékek hozzáadása az adatbázishoz
+            </Text>
+            
+            <View style={styles.productManagementButtons}>
+              <TouchableOpacity
+                style={styles.productManagementButton}
+                onPress={() => setIsProductModalVisible(true)}
+              >
+                <Ionicons name="add-circle" size={24} color="#14B8A6" />
+                <Text style={styles.productManagementButtonText}>Új termék</Text>
+                <Text style={styles.productManagementButtonSubtext}>Kézi hozzáadás</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.productManagementButton}
+                onPress={() => setIsJsonImportModalVisible(true)}
+              >
+                <Ionicons name="document-text" size={24} color="#14B8A6" />
+                <Text style={styles.productManagementButtonText}>JSON import</Text>
+                <Text style={styles.productManagementButtonSubtext}>Tömeges hozzáadás</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -1222,6 +1484,292 @@ const ShoppingScreen: React.FC = () => {
                   <Text style={styles.addItemButtonText}>Kézi hozzáadás</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* JSON Import Modal */}
+        <Modal
+          visible={isJsonImportModalVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setIsJsonImportModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.jsonModalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Termékek JSON importálása</Text>
+                <TouchableOpacity onPress={() => {
+                  setIsJsonImportModalVisible(false);
+                  setJsonInput('');
+                }}>
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.sectionTitle}>Példa formátum:</Text>
+              <View style={styles.jsonExample}>
+                <Text style={styles.jsonExampleText}>
+{`[
+  {
+    "name": "Tej 2,8%",
+    "brand": "Parmalat",
+    "category": "Tejtermékek",
+    "price": 400,
+    "unit": "l",
+    "barcode": "1234567890123"
+  },
+  {
+    "name": "Kenyér",
+    "brand": "Bakers",
+    "category": "Pékáruk",
+    "price": 650,
+    "unit": "db"
+  }
+]`}
+                </Text>
+              </View>
+
+              <Text style={styles.sectionTitle}>JSON adatok:</Text>
+              <TextInput
+                style={styles.jsonTextArea}
+                placeholder="Illeszd be a JSON adatokat ide..."
+                value={jsonInput}
+                onChangeText={setJsonInput}
+                multiline={true}
+              />
+
+              <View style={styles.inputRow}>
+                <TouchableOpacity
+                  style={[styles.createButton, { flex: 1, marginRight: 8 }]}
+                  onPress={importFromJson}
+                  disabled={isJsonImporting || !jsonInput.trim()}
+                >
+                  {isJsonImporting ? (
+                    <ActivityIndicator size="small" color="white" />
+                  ) : (
+                    <>
+                      <Ionicons name="cloud-upload" size={20} color="white" />
+                      <Text style={styles.createButtonText}>Importálás</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.input, styles.pickerContainer, { flex: 1, marginLeft: 8, marginBottom: 0 }]}
+                  onPress={() => {
+                    setIsJsonImportModalVisible(false);
+                    setJsonInput('');
+                  }}
+                >
+                  <Text style={styles.pickerValue}>Mégse</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Add New Product Modal */}
+        <Modal
+          visible={isProductModalVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setIsProductModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { height: '90%' }]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Új termék hozzáadása</Text>
+                <TouchableOpacity onPress={() => {
+                  setIsProductModalVisible(false);
+                  setNewProductData({
+                    name: '',
+                    brand: '',
+                    category: 'Általános',
+                    unit: 'db',
+                    price: '',
+                    barcode: '',
+                    description: ''
+                  });
+                }}>
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+                <Text style={styles.inputLabel}>Termék neve *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="pl. Tej 2,8%"
+                  value={newProductData.name}
+                  onChangeText={(text) => setNewProductData({...newProductData, name: text})}
+                />
+
+                <Text style={styles.inputLabel}>Márka</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="pl. Parmalat"
+                  value={newProductData.brand}
+                  onChangeText={(text) => setNewProductData({...newProductData, brand: text})}
+                />
+
+                <Text style={styles.inputLabel}>Kategória *</Text>
+                <TouchableOpacity 
+                  style={[styles.input, styles.pickerContainer]}
+                  onPress={() => setIsCategoryPickerVisible(true)}
+                >
+                  <Text style={styles.pickerValue}>{newProductData.category}</Text>
+                  <Ionicons name="chevron-down" size={20} color="#666" style={{ marginLeft: 'auto' }} />
+                </TouchableOpacity>
+
+                <View style={styles.inputRow}>
+                  <View style={styles.halfInput}>
+                    <Text style={styles.inputLabel}>Ár (Ft)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="0"
+                      value={newProductData.price}
+                      onChangeText={(text) => setNewProductData({...newProductData, price: text})}
+                      keyboardType="numeric"
+                    />
+                  </View>
+                  
+                  <View style={styles.halfInput}>
+                    <Text style={styles.inputLabel}>Egység</Text>
+                    <TouchableOpacity 
+                      style={[styles.input, styles.pickerContainer]}
+                      onPress={() => setIsUnitPickerVisible(true)}
+                    >
+                      <Text style={styles.pickerValue}>{newProductData.unit}</Text>
+                      <Ionicons name="chevron-down" size={20} color="#666" style={{ marginLeft: 'auto' }} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <Text style={styles.inputLabel}>Vonalkód</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="pl. 1234567890123"
+                  value={newProductData.barcode}
+                  onChangeText={(text) => setNewProductData({...newProductData, barcode: text})}
+                />
+
+                <Text style={styles.inputLabel}>Leírás</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Opcionális leírás..."
+                  value={newProductData.description}
+                  onChangeText={(text) => setNewProductData({...newProductData, description: text})}
+                  multiline={true}
+                />
+              </ScrollView>
+
+              <TouchableOpacity
+                style={styles.createButton}
+                onPress={addNewProduct}
+                disabled={loading || !newProductData.name.trim()}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <>
+                    <Ionicons name="add" size={20} color="white" />
+                    <Text style={styles.createButtonText}>Termék hozzáadása</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Category Picker Modal */}
+        <Modal
+          visible={isCategoryPickerVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setIsCategoryPickerVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Kategória kiválasztása</Text>
+                <TouchableOpacity onPress={() => setIsCategoryPickerVisible(false)}>
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              <FlatList
+                data={productCategories}
+                keyExtractor={(item) => item}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      styles.pickerItem,
+                      newProductData.category === item && styles.selectedPickerItem
+                    ]}
+                    onPress={() => {
+                      setNewProductData({...newProductData, category: item});
+                      setIsCategoryPickerVisible(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.pickerItemText,
+                      newProductData.category === item && styles.selectedPickerItemText
+                    ]}>
+                      {item}
+                    </Text>
+                    {newProductData.category === item && (
+                      <Ionicons name="checkmark" size={20} color="#14B8A6" />
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          </View>
+        </Modal>
+
+        {/* Unit Picker Modal */}
+        <Modal
+          visible={isUnitPickerVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setIsUnitPickerVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Egység kiválasztása</Text>
+                <TouchableOpacity onPress={() => setIsUnitPickerVisible(false)}>
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              <FlatList
+                data={units}
+                keyExtractor={(item) => item}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      styles.pickerItem,
+                      newProductData.unit === item && styles.selectedPickerItem
+                    ]}
+                    onPress={() => {
+                      setNewProductData({...newProductData, unit: item});
+                      setIsUnitPickerVisible(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.pickerItemText,
+                      newProductData.unit === item && styles.selectedPickerItemText
+                    ]}>
+                      {item}
+                    </Text>
+                    {newProductData.unit === item && (
+                      <Ionicons name="checkmark" size={20} color="#14B8A6" />
+                    )}
+                  </TouchableOpacity>
+                )}
+              />
             </View>
           </View>
         </Modal>
@@ -2025,6 +2573,94 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
+  },
+  productManagementSection: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginHorizontal: 20,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginBottom: 16,
+  },
+  productManagementButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  productManagementButton: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productManagementButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 8,
+  },
+  productManagementButtonSubtext: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  jsonModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 24,
+    width: '95%',
+    maxWidth: 500,
+    height: '85%',
+  },
+  jsonExample: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  jsonExampleText: {
+    fontSize: 12,
+    fontFamily: 'monospace',
+    color: '#374151',
+  },
+  jsonTextArea: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    fontFamily: 'monospace',
+    textAlignVertical: 'top',
+    flex: 1,
+    minHeight: 200,
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  selectedPickerItem: {
+    backgroundColor: '#F0F9FF',
+  },
+  pickerItemText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  selectedPickerItemText: {
+    fontSize: 16,
+    color: '#14B8A6',
+    fontWeight: '600',
   },
 });
 
