@@ -17,13 +17,40 @@ import { supabase } from '../lib/supabase';
 
 const { width } = Dimensions.get('window');
 
-interface Transaction {
-  id: string;
-  description: string;
+interface BudgetItem {
+  name: string;
   amount: number;
-  type: 'income' | 'expense';
+  category?: string;
+  description?: string;
+}
+
+interface OtherIncome {
+  name: string;
+  amount: number;
+  description?: string;
+}
+
+interface BudgetPlan {
+  id: string;
+  name: string;
+  total_amount: number;
+  budget_data: BudgetItem[];
+}
+
+interface IncomePlan {
+  id: string;
+  base_income: number;
+  other_income: OtherIncome[];
+  total_income: number;
+}
+
+interface SavingsGoal {
+  id: string;
+  name: string;
+  target_amount: number;
+  current_amount: number;
+  target_date: string;
   category: string;
-  date: string;
 }
 
 interface DashboardStats {
@@ -41,57 +68,17 @@ interface CategoryData {
 
 export default function HomeScreen({ navigation }: any) {
   const { user, userProfile } = useAuth();
+  const [budgetPlans, setBudgetPlans] = useState<BudgetPlan[]>([]);
+  const [incomePlans, setIncomePlans] = useState<IncomePlan[]>([]);
+  const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
   const [dashboardStats, setDashboardStats] = useState<DashboardStats>({
-    totalBalance: 385000,
-    monthlyIncome: 475000,
-    monthlyExpenses: 215000,
-    savings: 260000,
+    totalBalance: 0,
+    monthlyIncome: 0,
+    monthlyExpenses: 0,
+    savings: 0,
   });
-  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
-  const [upcomingBills, setUpcomingBills] = useState<any[]>([]);
   const [categoryData, setCategoryData] = useState<CategoryData[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Mock adatok a fejlesztéshez
-  const mockRecentTransactions: Transaction[] = [
-    {
-      id: '1',
-      description: 'Tesco bevásárlás',
-      amount: -12500,
-      type: 'expense',
-      category: 'Élelmiszer',
-      date: '2025-01-23',
-    },
-    {
-      id: '2',
-      description: 'Lakbér',
-      amount: -120000,
-      type: 'expense',
-      category: 'Lakhatás',
-      date: '2025-01-22',
-    },
-    {
-      id: '3',
-      description: 'Fizetés',
-      amount: 475000,
-      type: 'income',
-      category: 'Fizetés',
-      date: '2025-01-21',
-    },
-  ];
-
-  const mockUpcomingBills = [
-    { id: '1', name: 'Lakbér', dueDate: '2025-02-05', amount: 120000, icon: 'home' },
-    { id: '2', name: 'Internet', dueDate: '2025-02-10', amount: 8500, icon: 'wifi' },
-  ];
-
-  const mockCategoryData: CategoryData[] = [
-    { name: 'Élelmiszer', value: 45000, color: '#0084C7' },
-    { name: 'Lakhatás', value: 120000, color: '#00B4DB' },
-    { name: 'Közlekedés', value: 25000, color: '#00C9A7' },
-    { name: 'Szórakozás', value: 15000, color: '#C1E1C5' },
-    { name: 'Egyéb', value: 10000, color: '#F0F8FF' },
-  ];
 
   const loadDashboardData = useCallback(async () => {
     if (!user) return;
@@ -99,26 +86,129 @@ export default function HomeScreen({ navigation }: any) {
     try {
       setLoading(true);
       
-      // Mock adatok használata fejlesztés közben
-      setRecentTransactions(mockRecentTransactions);
-      setUpcomingBills(mockUpcomingBills);
-      setCategoryData(mockCategoryData);
+      // Költségvetési tervek betöltése
+      const { data: budgetData, error: budgetError } = await supabase
+        .from('budget_plans')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (budgetError) {
+        console.warn('Budget plans error:', budgetError);
+      }
+
+      // Bevételi tervek betöltése
+      const { data: incomeData, error: incomeError } = await supabase
+        .from('income_plans')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (incomeError) {
+        console.warn('Income plans error:', incomeError);
+      }
+
+      // Megtakarítási célok betöltése
+      const { data: savingsData, error: savingsError } = await supabase
+        .from('savings_goals')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (savingsError) {
+        console.warn('Savings goals error:', savingsError);
+      }
+
+      setBudgetPlans(budgetData || []);
       
-      // TODO: Valós adatok betöltése a Supabase-ből
-      // const { data: transactions } = await supabase
-      //   .from('transactions')
-      //   .select('*')
-      //   .eq('family_id', userProfile?.family_id)
-      //   .order('created_at', { ascending: false })
-      //   .limit(5);
+      // Income plans feldolgozása
+      if (incomeData && incomeData.length > 0) {
+        const latestIncome = incomeData[0];
+        
+        // Additional incomes parse-olása
+        let additionalIncomes: OtherIncome[] = [];
+        try {
+          if (latestIncome.additional_incomes) {
+            const parsed = typeof latestIncome.additional_incomes === 'string' 
+              ? JSON.parse(latestIncome.additional_incomes)
+              : latestIncome.additional_incomes;
+            
+            if (Array.isArray(parsed)) {
+              additionalIncomes = parsed.map((income: { name?: string; amount?: number; description?: string }) => ({
+                name: income.name || 'Egyéb jövedelem',
+                amount: income.amount || 0,
+                description: income.description || ''
+              }));
+            }
+          }
+        } catch (error) {
+          console.warn('Error parsing additional incomes:', error);
+        }
+
+        // IncomePlan objektum összeállítása
+        const incomeFromPlans: IncomePlan = {
+          id: latestIncome.id,
+          base_income: latestIncome.monthly_income || 0,
+          other_income: additionalIncomes,
+          total_income: latestIncome.total_income || 0
+        };
+
+        setIncomePlans([incomeFromPlans]);
+      } else {
+        setIncomePlans([]);
+      }
+      
+      setSavingsGoals(savingsData || []);
+
+      // Számítások
+      const currentBudget = budgetData?.[0];
+      const currentIncome = incomeData?.[0];
+      
+      const totalIncome = currentIncome?.total_income || 0;
+      const totalExpenses = currentBudget?.total_amount || 0;
+      const balance = totalIncome - totalExpenses;
+      const totalSavings = savingsData?.reduce((sum, goal) => sum + (goal.current_amount || 0), 0) || 0;
+
+      setDashboardStats({
+        totalBalance: balance,
+        monthlyIncome: totalIncome,
+        monthlyExpenses: totalExpenses,
+        savings: totalSavings,
+      });
+
+      // Költségvetési kategóriák a chart-hoz
+      if (currentBudget?.budget_data) {
+        const categories = currentBudget.budget_data.reduce((acc: Record<string, number>, item: BudgetItem) => {
+          const category = item.category || 'Egyéb';
+          acc[category] = (acc[category] || 0) + item.amount;
+          return acc;
+        }, {});
+
+        const colors = ['#0084C7', '#00B4DB', '#00C9A7', '#C1E1C5', '#F0F8FF'];
+        const categoryArray = Object.entries(categories).map(([name, value], index) => ({
+          name,
+          value: value as number,
+          color: colors[index % colors.length]
+        }));
+
+        setCategoryData(categoryArray);
+      }
+
+      console.log('Dashboard data loaded successfully', {
+        budgets: budgetData?.length || 0,
+        incomes: incomeData?.length || 0,
+        savings: savingsData?.length || 0
+      });
 
     } catch (error) {
       console.error('Hiba a dashboard adatok betöltésekor:', error);
-      Alert.alert('Hiba', 'Nem sikerült betölteni az adatokat');
+      Alert.alert('Információ', 'Az adatok betöltése során hiba történt. Alapértelmezett értékek lesznek használva.');
     } finally {
       setLoading(false);
     }
-  }, [user, userProfile]);
+  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -134,7 +224,7 @@ export default function HomeScreen({ navigation }: any) {
     }).format(amount);
   };
 
-  const renderStatsCard = (title: string, amount: number, icon: string, color: string, isIncome?: boolean) => (
+  const renderStatsCard = (title: string, amount: number, icon: string, color: string) => (
     <View style={[styles.statsCard, { backgroundColor: color }]}>
       <View style={styles.statsCardContent}>
         <View>
@@ -147,45 +237,6 @@ export default function HomeScreen({ navigation }: any) {
           <Ionicons name={icon as any} size={24} color="white" />
         </View>
       </View>
-    </View>
-  );
-
-  const renderTransactionItem = (transaction: Transaction) => (
-    <View key={transaction.id} style={styles.transactionItem}>
-      <View style={styles.transactionIcon}>
-        <Ionicons 
-          name={getTransactionIcon(transaction.category)} 
-          size={20} 
-          color="#14B8A6" 
-        />
-      </View>
-      <View style={styles.transactionInfo}>
-        <Text style={styles.transactionName}>{transaction.description}</Text>
-        <Text style={styles.transactionDetails}>
-          {new Date(transaction.date).toLocaleDateString('hu-HU')} • {transaction.category}
-        </Text>
-      </View>
-      <Text style={[
-        styles.transactionAmount,
-        { color: transaction.amount > 0 ? '#10B981' : '#EF4444' }
-      ]}>
-        {transaction.amount > 0 ? '+' : ''}{formatCurrency(transaction.amount)}
-      </Text>
-    </View>
-  );
-
-  const renderUpcomingBill = (bill: any) => (
-    <View key={bill.id} style={styles.billItem}>
-      <View style={styles.billIcon}>
-        <Ionicons name={bill.icon as any} size={20} color="#F59E0B" />
-      </View>
-      <View style={styles.billInfo}>
-        <Text style={styles.billName}>{bill.name}</Text>
-        <Text style={styles.billDate}>Esedékes: {bill.dueDate}</Text>
-      </View>
-      <Text style={styles.billAmount}>
-        {formatCurrency(bill.amount)}
-      </Text>
     </View>
   );
 
@@ -206,25 +257,12 @@ export default function HomeScreen({ navigation }: any) {
     </TouchableOpacity>
   );
 
-  const getTransactionIcon = (category: string) => {
-    switch (category.toLowerCase()) {
-      case 'élelmiszer': return 'basket';
-      case 'lakhatás': return 'home';
-      case 'közlekedés': return 'car';
-      case 'szórakozás': return 'film';
-      case 'fizetés': return 'card';
-      default: return 'ellipse';
-    }
-  };
-
   const navigateToTransactions = () => {
-    // navigation.navigate('TransactionsScreen');
-    Alert.alert('Fejlesztés alatt', 'A tranzakciók képernyő hamarosan elérhető lesz!');
+    Alert.alert('Fejlesztés alatt', 'Ez a funkció nem érhető el a webes verzióban.');
   };
 
   const navigateToFamilyMembers = () => {
-    // navigation.navigate('FamilyMembersScreen');
-    Alert.alert('Fejlesztés alatt', 'A családtagok képernyő hamarosan elérhető lesz!');
+    navigation.navigate('FamilyMembers');
   };
 
   const navigateToBudget = () => {
@@ -233,10 +271,6 @@ export default function HomeScreen({ navigation }: any) {
 
   const navigateToSavings = () => {
     navigation.navigate('Megtakarítások');
-  };
-
-  const navigateToShopping = () => {
-    navigation.navigate('Bevásárlólista');
   };
 
   if (loading) {
@@ -281,7 +315,7 @@ export default function HomeScreen({ navigation }: any) {
           {/* Stats Cards */}
           <View style={styles.statsContainer}>
             {renderStatsCard('Egyenleg', dashboardStats.totalBalance, 'wallet', '#14B8A6')}
-            {renderStatsCard('Havi bevétel', dashboardStats.monthlyIncome, 'arrow-up', '#10B981', true)}
+            {renderStatsCard('Havi bevétel', dashboardStats.monthlyIncome, 'arrow-up', '#10B981')}
             {renderStatsCard('Havi kiadás', dashboardStats.monthlyExpenses, 'arrow-down', '#EF4444')}
             {renderStatsCard('Megtakarítás', dashboardStats.savings, 'trophy', '#8B5CF6')}
           </View>
@@ -297,34 +331,33 @@ export default function HomeScreen({ navigation }: any) {
             </View>
           </View>
 
-          {/* Recent Transactions */}
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Legutóbbi tranzakciók</Text>
-              <TouchableOpacity onPress={navigateToTransactions}>
-                <Text style={styles.seeAllText}>Összes</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.transactionsContainer}>
-              {recentTransactions.map(renderTransactionItem)}
-            </View>
-          </View>
-
-          {/* Upcoming Bills */}
-          <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>Közelgő számlák</Text>
-            <View style={styles.billsContainer}>
-              {upcomingBills.map(renderUpcomingBill)}
-            </View>
-          </View>
-
           {/* Category Breakdown */}
-          <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>Kiadások kategóriái</Text>
-            <View style={styles.categoriesContainer}>
-              {categoryData.map(renderCategoryItem)}
+          {categoryData.length > 0 && (
+            <View style={styles.sectionContainer}>
+              <Text style={styles.sectionTitle}>Kiadások kategóriái</Text>
+              <View style={styles.categoriesContainer}>
+                {categoryData.map(renderCategoryItem)}
+              </View>
             </View>
-          </View>
+          )}
+
+          {/* Savings Goals */}
+          {savingsGoals.length > 0 && (
+            <View style={styles.sectionContainer}>
+              <Text style={styles.sectionTitle}>Megtakarítási célok</Text>
+              <View style={styles.categoriesContainer}>
+                {savingsGoals.slice(0, 3).map((goal) => (
+                  <View key={goal.id} style={styles.categoryItem}>
+                    <View style={[styles.categoryColor, { backgroundColor: '#14B8A6' }]} />
+                    <Text style={styles.categoryName}>{goal.name}</Text>
+                    <Text style={styles.categoryAmount}>
+                      {formatCurrency(goal.current_amount)} / {formatCurrency(goal.target_amount)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>
@@ -465,95 +498,11 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 16,
-  },
-  seeAllText: {
-    fontSize: 14,
-    color: '#14B8A6',
-    fontWeight: '600',
-  },
-  transactionsContainer: {
-    gap: 12,
-  },
-  transactionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  transactionIcon: {
-    width: 40,
-    height: 40,
-    backgroundColor: '#F0FDF4',
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  transactionInfo: {
-    flex: 1,
-  },
-  transactionName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 2,
-  },
-  transactionDetails: {
-    fontSize: 12,
-    color: '#666',
-  },
-  transactionAmount: {
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  billsContainer: {
-    gap: 12,
-  },
-  billItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFBEB',
-    borderWidth: 1,
-    borderColor: '#FED7AA',
-    borderRadius: 8,
-    padding: 12,
-  },
-  billIcon: {
-    width: 32,
-    height: 32,
-    backgroundColor: 'white',
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  billInfo: {
-    flex: 1,
-  },
-  billName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 2,
-  },
-  billDate: {
-    fontSize: 12,
-    color: '#D97706',
-  },
-  billAmount: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#EF4444',
   },
   categoriesContainer: {
     gap: 8,

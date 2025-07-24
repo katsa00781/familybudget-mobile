@@ -64,27 +64,30 @@ export default function FamilyMembersScreen() {
   }, []);
 
   const loadFamilyMembers = async () => {
-    if (!userProfile?.family_id) return;
+    if (!user) return;
 
     try {
       setLoading(true);
       
-      // Mock adatok használata fejlesztés közben
-      setFamilyMembers(mockFamilyMembers);
-      
-      // TODO: Valós adatok betöltése
-      // const { data, error } = await supabase
-      //   .from('profiles')
-      //   .select('*')
-      //   .eq('family_id', userProfile.family_id)
-      //   .order('created_at', { ascending: true });
+      // Valós adatok betöltése a Supabase-ből
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('family_id', userProfile?.family_id || user.id)
+        .order('created_at', { ascending: true });
 
-      // if (error) throw error;
-      // setFamilyMembers(data || []);
+      if (error) {
+        console.error('Hiba a családtagok betöltésekor:', error);
+        // Fallback mock adatok használata
+        setFamilyMembers(mockFamilyMembers);
+      } else {
+        setFamilyMembers(data || []);
+      }
 
     } catch (error) {
       console.error('Hiba a családtagok betöltésekor:', error);
-      Alert.alert('Hiba', 'Nem sikerült betölteni a családtagokat');
+      // Fallback mock adatok használata
+      setFamilyMembers(mockFamilyMembers);
     } finally {
       setLoading(false);
     }

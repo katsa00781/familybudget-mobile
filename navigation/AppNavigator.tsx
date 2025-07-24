@@ -9,12 +9,11 @@ import { useAuth } from '../context/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import HomeScreen from '../screens/HomeScreen';
-import ProfileScreen from '../screens/ProfileScreen';
 import BudgetScreen from '../screens/BudgetScreen';
 import SavingsScreen from '../screens/SavingsScreen';
 import ShoppingScreen from '../screens/ShoppingScreen';
+import ProfileScreen from '../screens/ProfileScreen';
 import SalaryScreen from '../screens/SalaryScreen';
-import TransactionsScreen from '../screens/TransactionsScreen';
 import FamilyMembersScreen from '../screens/FamilyMembersScreen';
 
 const Stack = createStackNavigator<any>();
@@ -55,8 +54,8 @@ function MainTabs() {
             iconName = focused ? 'home' : 'home-outline';
           } else if (route.name === 'Költségvetés') {
             iconName = focused ? 'calculator' : 'calculator-outline';
-          } else if (route.name === 'Tranzakciók') {
-            iconName = focused ? 'list' : 'list-outline';
+          } else if (route.name === 'Bevásárlólista') {
+            iconName = focused ? 'basket' : 'basket-outline';
           } else if (route.name === 'Bérkalkulátor') {
             iconName = focused ? 'cash' : 'cash-outline';
           } else if (route.name === 'Megtakarítások') {
@@ -98,11 +97,11 @@ function MainTabs() {
         }}
       />
       <Tab.Screen 
-        name="Tranzakciók" 
-        component={TransactionsScreen}
+        name="Bevásárlólista" 
+        component={ShoppingScreen}
         options={{
-          tabBarLabel: 'Tranzakciók',
-          headerTitle: 'Tranzakciók',
+          tabBarLabel: 'Bevásárlás',
+          headerTitle: 'Bevásárlólisták',
         }}
       />
       <Tab.Screen 
