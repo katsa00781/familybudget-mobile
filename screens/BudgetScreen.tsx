@@ -10,9 +10,12 @@ import {
   TextInput,
   Modal,
   SafeAreaView,
+  RefreshControl,
+  FlatList,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 
@@ -51,6 +54,79 @@ interface IncomePlan {
   created_at: string;
   updated_at?: string;
 }
+
+// Bérkalkulátor típusok
+interface SavedCalculation {
+  id: string;
+  family_member_id: string;
+  alapber: number;
+  ledolgozott_napok: number;
+  brutto_ber: number;
+  netto_ber: number;
+  created_at: string;
+}
+
+interface User {
+  id: string;
+  email?: string;
+  user_metadata?: {
+    full_name?: string;
+    display_name?: string;
+  };
+}
+
+interface AdditionalIncome {
+  id: string;
+  name: string;
+  amount: number;
+}
+
+interface SalaryResult {
+  alapber: number;
+  oraber: number;
+  haviberesIdober: number;
+  fizetettSzabadsag: number;
+  tuloraAlapossszeg: number;
+  tuloraPotlek: number;
+  muszakpotlek: number;
+  tuloraMuszakpotlek: number;
+  unnepnapiMunka: number;
+  betegszabadsag: number;
+  kikuldetesTobblet: number;
+  gyedMunkavMellett: number;
+  formaruhakompenzacio: number;
+  bruttoBer: number;
+  osszesJarandsag: number;
+  tbJarulék: number;
+  nyugdijJarulék: number;
+  onkentesNyugdij: number;
+  erdekKepvTagdij: number;
+  szja: number;
+  szjaAlap: number;
+  kedvezményesAlap: number;
+  osszesLevonas: number;
+  netto: number;
+  szocHozzjarulas: number;
+  teljesMunkaltaroiKoltseg: number;
+  levonasArany: string;
+  munkaltaroiTerhek: string;
+}
+
+// 2025-ös bérszámítási kulcsok
+const KULCSOK = {
+  SZOCIALIS_HOZZAJARULAS: 0.135, // 13.5%
+  TB_JARULÉK: 0.185, // 18.5%
+  NYUGDIJJARULÉK: 0.10, // 10%
+  SZJA_KULCS: 0.15, // 15%
+  ÖNKÉNTES_NYUGDIJ: 0.02, // 2%
+  MUSZAKPOTLEK: 0.45, // 45%
+  TULORA_POTLEK: 1.0, // 100%
+  UNNEPNAPI_SZORZO: 2.0, // 200%
+  BETEGSZABADSAG_SZAZALEK: 0.70, // 70%
+  GYED_NAPI: 13570, // GYED napi összeg
+  KIKULDETESI_POTLEK: 6710,
+  ERDEKKÉPVISELETI_TAGDIJ_SZAZALEK: 0.008 // 0.8%
+};
 
 // Helper function to generate unique IDs
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -117,6 +193,9 @@ const createInitialBudgetData = (): BudgetCategory[] => [
 const BudgetScreen: React.FC = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // Költségvetés állapotok
   const [budgetData, setBudgetData] = useState<BudgetCategory[]>(createInitialBudgetData());
   const [savedBudgets, setSavedBudgets] = useState<SavedBudget[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -129,10 +208,41 @@ const BudgetScreen: React.FC = () => {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [editingItem, setEditingItem] = useState<{categoryIndex: number, itemIndex: number} | null>(null);
 
+  // Bérkalkulátor állapotok
+  const [users, setUsers] = useState<User[]>([]);
+  const [familyMember, setFamilyMember] = useState("");
+  const [savedCalculations, setSavedCalculations] = useState<SavedCalculation[]>([]);
+  const [eredmény, setEredmény] = useState<SalaryResult | null>(null);
+  
+  // Bérkalkulátor input állapotok
+  const [alapber, setAlapber] = useState(986400);
+  const [ledolgozottNapok, setLedolgozottNapok] = useState(20);
+  const [szabadsagNapok, setSzabadsagNapok] = useState(0);
+  const [tuloraOrak, setTuloraOrak] = useState(0);
+  const [unnepnapiOrak, setUnnepnapiOrak] = useState(0);
+  const [betegszabadsagNapok, setBetegszabadsagNapok] = useState(0);
+  const [kikuldetesNapok, setKikuldetesNapok] = useState(0);
+  const [gyedMellett, setGyedMellett] = useState(30);
+  const [formaruhakompenzacio, setFormaruhakompenzacio] = useState(0);
+  const [családiAdókedvezmény, setCsaládiAdókedvezmény] = useState(333330);
+  const [additionalIncomes, setAdditionalIncomes] = useState<AdditionalIncome[]>([]);
+  
+  // Modal állapotok
+  const [activeTab, setActiveTab] = useState<'budget' | 'salary'>('budget');
+  const [isFamilyMemberModalVisible, setIsFamilyMemberModalVisible] = useState(false);
+  const [isAdditionalIncomeModalVisible, setIsAdditionalIncomeModalVisible] = useState(false);
+  const [newIncome, setNewIncome] = useState({ name: '', amount: 0 });
+
+  // Számított értékek
+  const ledolgozottOrak = ledolgozottNapok * 8.1;
+  const muszakpotlekOrak = ledolgozottOrak;
+  const szabadsagOrak = szabadsagNapok * 8.1;
+
   // Felhasználó és adatok betöltése
   useEffect(() => {
     if (user) {
       loadData();
+      loadUsers();
     }
   }, [user]);
 
@@ -182,6 +292,44 @@ const BudgetScreen: React.FC = () => {
       console.error('Hiba az adatok betöltésekor:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Felhasználók betöltése bérkalkulátorhoz
+  const loadUsers = async () => {
+    try {
+      const { data: profilesData, error } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, display_name');
+      
+      if (error || !profilesData) {
+        // Fallback statikus adatok
+        const fallbackUsers = [
+          { id: '1', email: 'janos@example.com', user_metadata: { full_name: 'János' } },
+          { id: '2', email: 'eva@example.com', user_metadata: { full_name: 'Éva' } },
+          { id: '3', email: 'peter@example.com', user_metadata: { full_name: 'Péter' } }
+        ];
+        setUsers(fallbackUsers);
+        if (!familyMember) {
+          setFamilyMember('1');
+        }
+      } else {
+        const formattedUsers = profilesData.map(profile => ({
+          id: profile.id,
+          email: profile.email,
+          user_metadata: {
+            full_name: profile.full_name || profile.display_name,
+            display_name: profile.display_name
+          }
+        }));
+        setUsers(formattedUsers);
+        
+        if (!familyMember && formattedUsers.length > 0) {
+          setFamilyMember(formattedUsers[0].id);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error);
     }
   };
 
@@ -451,6 +599,627 @@ const BudgetScreen: React.FC = () => {
     );
   };
 
+  // BÉRKALKULÁTOR FÜGGVÉNYEK
+
+  // Bérszámítás
+  const calculateSalary = useCallback(() => {
+    const oraber = alapber / 174;
+    
+    // Járandóságok számítása
+    const haviberesIdober = Math.round(ledolgozottOrak * oraber);
+    const fizetettSzabadsag = Math.round(szabadsagOrak * oraber);
+    
+    // Túlóra számítás
+    const tuloraAlapossszeg = Math.round(tuloraOrak * oraber);
+    const tuloraPotlek = Math.round(tuloraOrak * oraber * KULCSOK.TULORA_POTLEK);
+    
+    const muszakpotlek = Math.round(muszakpotlekOrak * oraber * KULCSOK.MUSZAKPOTLEK);
+    const tuloraMuszakpotlek = Math.round(tuloraOrak * oraber * KULCSOK.MUSZAKPOTLEK);
+    const unnepnapiMunka = Math.round(unnepnapiOrak * oraber * KULCSOK.UNNEPNAPI_SZORZO);
+    const betegszabadsag = Math.round(betegszabadsagNapok * (oraber * 8) * KULCSOK.BETEGSZABADSAG_SZAZALEK);
+    const kikuldetesTobblet = Math.round(kikuldetesNapok * KULCSOK.KIKULDETESI_POTLEK);
+    const gyedMunkavMellett = Math.round(gyedMellett * KULCSOK.GYED_NAPI);
+    
+    // Bruttó bér összesen
+    const bruttoBer = haviberesIdober + fizetettSzabadsag + tuloraAlapossszeg + tuloraPotlek +
+                     muszakpotlek + tuloraMuszakpotlek + unnepnapiMunka + 
+                     betegszabadsag + kikuldetesTobblet;
+    
+    // Összes járandóság
+    const osszesJarandsag = bruttoBer + gyedMunkavMellett + formaruhakompenzacio;
+    
+    // TB járulék számítás
+    const tbJarulékAlap = Math.min(bruttoBer, 1200000);
+    const tbJarulék = Math.round(tbJarulékAlap * KULCSOK.TB_JARULÉK);
+    
+    // Nyugdíjjárulék
+    const nyugdijJarulék = bruttoBer > 500000 ? Math.round(bruttoBer * KULCSOK.NYUGDIJJARULÉK) : 0;
+    
+    // Önkéntes nyugdíjpénztári befizetés
+    const onkentesNyugdij = Math.round(bruttoBer * KULCSOK.ÖNKÉNTES_NYUGDIJ);
+    
+    // Érdekképviseleti tagdíj
+    const erdekKepvTagdij = Math.round(bruttoBer * KULCSOK.ERDEKKÉPVISELETI_TAGDIJ_SZAZALEK);
+    
+    // SZJA alap
+    const szjaAlap = bruttoBer + formaruhakompenzacio - tbJarulék - nyugdijJarulék - onkentesNyugdij;
+    
+    // Családi adókedvezmény alkalmazása
+    const kedvezményesAlap = Math.max(0, szjaAlap - családiAdókedvezmény);
+    
+    // SZJA számítás
+    const szja = Math.round(kedvezményesAlap * KULCSOK.SZJA_KULCS);
+    
+    // Összes levonás
+    const osszesLevonas = tbJarulék + nyugdijJarulék + onkentesNyugdij + szja + erdekKepvTagdij;
+    
+    // Nettó fizetés
+    const netto = osszesJarandsag - osszesLevonas;
+    
+    // Munkáltatói terhek
+    const szocHozzjarulas = Math.round((bruttoBer + formaruhakompenzacio) * KULCSOK.SZOCIALIS_HOZZAJARULAS);
+    const teljesMunkaltaroiKoltseg = osszesJarandsag + szocHozzjarulas;
+
+    setEredmény({
+      alapber,
+      oraber: Math.round(oraber),
+      haviberesIdober,
+      fizetettSzabadsag,
+      tuloraAlapossszeg,
+      tuloraPotlek,
+      muszakpotlek,
+      tuloraMuszakpotlek,
+      unnepnapiMunka,
+      betegszabadsag,
+      kikuldetesTobblet,
+      gyedMunkavMellett,
+      formaruhakompenzacio,
+      bruttoBer,
+      osszesJarandsag,
+      tbJarulék,
+      nyugdijJarulék,
+      onkentesNyugdij,
+      erdekKepvTagdij,
+      szja,
+      szjaAlap,
+      kedvezményesAlap,
+      osszesLevonas,
+      netto,
+      szocHozzjarulas,
+      teljesMunkaltaroiKoltseg,
+      levonasArany: ((osszesLevonas / osszesJarandsag) * 100).toFixed(1),
+      munkaltaroiTerhek: ((szocHozzjarulas / osszesJarandsag) * 100).toFixed(1)
+    });
+  }, [alapber, ledolgozottOrak, szabadsagOrak, tuloraOrak, muszakpotlekOrak, 
+      unnepnapiOrak, betegszabadsagNapok, kikuldetesNapok, gyedMellett, 
+      formaruhakompenzacio, családiAdókedvezmény]);
+
+  // Auto-calculate when values change
+  useEffect(() => {
+    calculateSalary();
+  }, [calculateSalary]);
+
+  // Mentett bérszámítások betöltése
+  const fetchSavedCalculations = useCallback(async () => {
+    if (!familyMember) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('salary_calculations')
+        .select('*')
+        .eq('family_member_id', familyMember)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (error) {
+        console.error('Error fetching saved calculations:', error);
+      } else {
+        setSavedCalculations(data || []);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  }, [familyMember]);
+
+  useEffect(() => {
+    fetchSavedCalculations();
+  }, [fetchSavedCalculations]);
+
+  // Bérszámítás mentése
+  const handleSaveCalculation = async () => {
+    if (!familyMember || !eredmény) {
+      Alert.alert('Hiba', 'Kérjük válasszon családtagot és számítsa ki a bért!');
+      return;
+    }
+
+    try {
+      const calculationData = {
+        family_member_id: familyMember,
+        alapber,
+        ledolgozott_napok: ledolgozottNapok,
+        ledolgozott_orak: ledolgozottOrak,
+        szabadsag_napok: szabadsagNapok,
+        szabadsag_orak: szabadsagOrak,
+        tulora_orak: tuloraOrak,
+        muszakpotlek_orak: muszakpotlekOrak,
+        unnepnapi_orak: unnepnapiOrak,
+        betegszabadsag_napok: betegszabadsagNapok,
+        kikuldes_napok: kikuldetesNapok,
+        gyed_mellett: gyedMellett,
+        formaruha_kompenzacio: formaruhakompenzacio,
+        csaladi_adokedvezmeny: családiAdókedvezmény,
+        brutto_ber: eredmény.bruttoBer,
+        netto_ber: eredmény.netto,
+        szja: eredmény.szja,
+        tb_jarulék: eredmény.tbJarulék,
+        szoc_hozzajarulas: eredmény.szocHozzjarulas,
+        teljes_munkaltaroi_koltseg: eredmény.teljesMunkaltaroiKoltseg,
+        additional_incomes: JSON.stringify(additionalIncomes),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const { error } = await supabase
+        .from('salary_calculations')
+        .insert([calculationData])
+        .select();
+
+      if (error) {
+        console.error('Error saving calculation:', error);
+        Alert.alert('Hiba', 'Hiba történt a mentés során: ' + error.message);
+      } else {
+        Alert.alert('Siker', 'Számítás sikeresen elmentve!');
+        fetchSavedCalculations();
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      Alert.alert('Hiba', 'Hiba történt a mentés során!');
+    }
+  };
+
+  // Egyéb jövedelem kezelése
+  const addAdditionalIncome = () => {
+    if (newIncome.name.trim() && newIncome.amount > 0) {
+      setAdditionalIncomes([...additionalIncomes, {
+        id: Date.now().toString(),
+        name: newIncome.name,
+        amount: newIncome.amount
+      }]);
+      setNewIncome({ name: '', amount: 0 });
+      setIsAdditionalIncomeModalVisible(false);
+      Alert.alert('Siker', 'Jövedelem hozzáadva!');
+    } else {
+      Alert.alert('Hiba', 'Kérjük töltse ki az összes mezőt!');
+    }
+  };
+
+  const removeAdditionalIncome = (id: string) => {
+    setAdditionalIncomes(additionalIncomes.filter(income => income.id !== id));
+  };
+
+  // Teljes havi bevétel számítása
+  const getTotalMonthlyIncome = useCallback(() => {
+    const nettoSalary = eredmény?.netto || 0;
+    const additionalTotal = additionalIncomes.reduce((sum, income) => sum + income.amount, 0);
+    return nettoSalary + additionalTotal;
+  }, [eredmény, additionalIncomes]);
+
+  // Pull to refresh
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadData();
+    await fetchSavedCalculations();
+    setRefreshing(false);
+  }, [fetchSavedCalculations]);
+
+  // Render függvények
+  const renderBudgetContent = () => {
+    const { total, szuksegletTotal, vagyakTotal, megtakaritasTotal } = calculateTotals();
+    const balance = expectedIncome - total;
+
+    return (
+      <>
+        {/* Budget Selector */}
+        {savedBudgets.length > 0 && (
+          <View style={styles.budgetSelectorContainer}>
+            <Text style={styles.budgetSelectorTitle}>Költségvetés:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.budgetSelector}>
+              {savedBudgets.map((budget) => (
+                <TouchableOpacity
+                  key={budget.id}
+                  style={[
+                    styles.budgetOption,
+                    selectedBudgetId === budget.id && styles.selectedBudgetOption
+                  ]}
+                  onPress={() => loadBudget(budget)}
+                >
+                  <Text style={[
+                    styles.budgetOptionText,
+                    selectedBudgetId === budget.id && styles.selectedBudgetOptionText
+                  ]}>
+                    {budget.name || `Költségvetés ${budget.id.slice(0, 8)}`}
+                  </Text>
+                  <Text style={styles.budgetOptionAmount}>
+                    {formatCurrency(budget.total_amount)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Summary */}
+        <View style={styles.summaryContainer}>
+          <View style={styles.balanceContainer}>
+            <Text style={styles.balanceTitle}>Egyenleg</Text>
+            <Text style={[styles.summaryAmount, balance >= 0 ? styles.positiveBalance : styles.negativeBalance]}>
+              {formatCurrency(balance)}
+            </Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Várható bevétel</Text>
+              <Text style={styles.summaryAmount}>{formatCurrency(expectedIncome)}</Text>
+            </View>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Tervezett kiadás</Text>
+              <Text style={styles.summaryAmount}>{formatCurrency(total)}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Type Summary */}
+        <View style={styles.typeSummaryContainer}>
+          <View style={styles.typeItem}>
+            <View style={[styles.typeIndicator, { backgroundColor: getTypeColor('Szükséglet') }]} />
+            <Text style={styles.typeLabel}>Szükséglet</Text>
+            <Text style={styles.typeAmount}>{formatCurrency(szuksegletTotal)}</Text>
+          </View>
+          <View style={styles.typeItem}>
+            <View style={[styles.typeIndicator, { backgroundColor: getTypeColor('Vágyak') }]} />
+            <Text style={styles.typeLabel}>Vágyak</Text>
+            <Text style={styles.typeAmount}>{formatCurrency(vagyakTotal)}</Text>
+          </View>
+          <View style={styles.typeItem}>
+            <View style={[styles.typeIndicator, { backgroundColor: getTypeColor('Megtakarítás') }]} />
+            <Text style={styles.typeLabel}>Megtakarítás</Text>
+            <Text style={styles.typeAmount}>{formatCurrency(megtakaritasTotal)}</Text>
+          </View>
+        </View>
+
+        {/* Budget Categories */}
+        <View style={styles.categoriesContainer}>
+          {budgetData.map((category, categoryIndex) => (
+            <View key={category.name} style={styles.categoryCard}>
+              <View style={styles.categoryHeader}>
+                <View style={styles.categoryTitleRow}>
+                  <Ionicons name={getCategoryIcon(category.name) as any} size={20} color="#14B8A6" />
+                  <Text style={styles.categoryTitle}>{category.name}</Text>
+                </View>
+                <Text style={styles.categoryTotal}>
+                  {formatCurrency(getCategoryTotal(category))}
+                </Text>
+              </View>
+              
+              <View style={styles.itemsContainer}>
+                {category.items.map((item, itemIndex) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.itemRow}
+                    onPress={() => setEditingItem({ categoryIndex, itemIndex })}
+                  >
+                    <View style={styles.itemLeft}>
+                      <View style={[styles.typeIndicator, { backgroundColor: getTypeColor(item.type) }]} />
+                      <Text style={styles.itemName}>{item.subcategory}</Text>
+                    </View>
+                    <View style={styles.itemRight}>
+                      <Text style={styles.itemAmountText}>{formatCurrency(item.amount)}</Text>
+                      <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          ))}
+        </View>
+      </>
+    );
+  };
+
+  const renderSalaryContent = () => (
+    <>
+      {/* Family Member Selection */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Családtag</Text>
+        <TouchableOpacity
+          style={styles.familyMemberSelector}
+          onPress={() => setIsFamilyMemberModalVisible(true)}
+        >
+          <Text style={styles.familyMemberText}>
+            {users.find(u => u.id === familyMember)?.user_metadata?.full_name || 
+             users.find(u => u.id === familyMember)?.email || 
+             'Válassz családtagot'}
+          </Text>
+          <Ionicons name="chevron-down" size={20} color="#666" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Basic Data */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Alapadatok</Text>
+        
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Besorolási alapbér (Ft/hó)</Text>
+          <TextInput
+            style={styles.input}
+            value={alapber.toString()}
+            onChangeText={(text) => setAlapber(parseInt(text) || 0)}
+            keyboardType="numeric"
+            placeholder="986400"
+          />
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Családi adókedvezmény (Ft/hó)</Text>
+          <TextInput
+            style={styles.input}
+            value={családiAdókedvezmény.toString()}
+            onChangeText={(text) => setCsaládiAdókedvezmény(parseInt(text) || 0)}
+            keyboardType="numeric"
+            placeholder="333330"
+          />
+          <Text style={styles.inputHint}>2 gyermek: 333.330 Ft</Text>
+        </View>
+      </View>
+
+      {/* Working Time */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Munkaidő</Text>
+        
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Ledolgozott napok</Text>
+          <TextInput
+            style={styles.input}
+            value={ledolgozottNapok.toString()}
+            onChangeText={(text) => setLedolgozottNapok(parseFloat(text) || 0)}
+            keyboardType="numeric"
+            placeholder="20"
+          />
+          <Text style={styles.inputHint}>{ledolgozottOrak.toFixed(2)} óra (1 nap = 8,1 óra)</Text>
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Fizetett szabadság (nap)</Text>
+          <TextInput
+            style={styles.input}
+            value={szabadsagNapok.toString()}
+            onChangeText={(text) => setSzabadsagNapok(parseFloat(text) || 0)}
+            keyboardType="numeric"
+            placeholder="0"
+          />
+          <Text style={styles.inputHint}>{szabadsagOrak.toFixed(2)} óra (1 nap = 8,1 óra)</Text>
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Túlóra (óra)</Text>
+          <TextInput
+            style={styles.input}
+            value={tuloraOrak.toString()}
+            onChangeText={(text) => setTuloraOrak(parseFloat(text) || 0)}
+            keyboardType="numeric"
+            placeholder="0"
+          />
+          <Text style={styles.inputHint}>+100% pótlék (összesen 200%)</Text>
+        </View>
+      </View>
+
+      {/* Other */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Egyéb</Text>
+        
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Ünnepnapi munka (óra)</Text>
+          <TextInput
+            style={styles.input}
+            value={unnepnapiOrak.toString()}
+            onChangeText={(text) => setUnnepnapiOrak(parseFloat(text) || 0)}
+            keyboardType="numeric"
+            placeholder="0"
+          />
+          <Text style={styles.inputHint}>+100% pótlék</Text>
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Betegszabadság (nap)</Text>
+          <TextInput
+            style={styles.input}
+            value={betegszabadsagNapok.toString()}
+            onChangeText={(text) => setBetegszabadsagNapok(parseFloat(text) || 0)}
+            keyboardType="numeric"
+            placeholder="0"
+          />
+          <Text style={styles.inputHint}>70% térítés</Text>
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Kiküldetés (nap)</Text>
+          <TextInput
+            style={styles.input}
+            value={kikuldetesNapok.toString()}
+            onChangeText={(text) => setKikuldetesNapok(parseFloat(text) || 0)}
+            keyboardType="numeric"
+            placeholder="0"
+          />
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>GYED munkavégzés mellett (nap)</Text>
+          <TextInput
+            style={styles.input}
+            value={gyedMellett.toString()}
+            onChangeText={(text) => setGyedMellett(parseFloat(text) || 0)}
+            keyboardType="numeric"
+            placeholder="30"
+          />
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.inputLabel}>Formaruha kompenzáció (Ft)</Text>
+          <TextInput
+            style={styles.input}
+            value={formaruhakompenzacio.toString()}
+            onChangeText={(text) => setFormaruhakompenzacio(parseInt(text) || 0)}
+            keyboardType="numeric"
+            placeholder="0"
+          />
+        </View>
+      </View>
+
+      {/* Results */}
+      {eredmény && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Eredmény</Text>
+          
+          <View style={styles.resultCard}>
+            <View style={styles.resultItem}>
+              <Text style={styles.resultLabel}>Órabér</Text>
+              <Text style={styles.resultValue}>{formatCurrency(eredmény.oraber)}/óra</Text>
+            </View>
+
+            <View style={styles.resultItem}>
+              <Text style={styles.resultLabel}>Bruttó bér összesen</Text>
+              <Text style={[styles.resultValue, styles.greenText]}>{formatCurrency(eredmény.bruttoBer)}</Text>
+            </View>
+
+            <View style={styles.resultItem}>
+              <Text style={styles.resultLabel}>Összes levonás</Text>
+              <Text style={[styles.resultValue, styles.redText]}>-{formatCurrency(eredmény.osszesLevonas)}</Text>
+              <Text style={styles.resultHint}>Levonások aránya: {eredmény.levonasArany}%</Text>
+            </View>
+
+            <View style={[styles.resultItem, styles.mainResult]}>
+              <Text style={styles.resultLabel}>Nettó fizetés</Text>
+              <Text style={[styles.resultValue, styles.blueText, styles.largeText]}>{formatCurrency(eredmény.netto)}</Text>
+            </View>
+
+            {/* Additional incomes */}
+            <View style={styles.additionalIncomesSection}>
+              <View style={styles.additionalIncomesHeader}>
+                <Text style={styles.additionalIncomesTitle}>Egyéb jövedelmek</Text>
+                <TouchableOpacity
+                  style={styles.addIncomeButton}
+                  onPress={() => setIsAdditionalIncomeModalVisible(true)}
+                >
+                  <Ionicons name="add" size={16} color="#14B8A6" />
+                  <Text style={styles.addIncomeButtonText}>Hozzáad</Text>
+                </TouchableOpacity>
+              </View>
+
+              {additionalIncomes.map((income) => (
+                <View key={income.id} style={styles.incomeItem}>
+                  <View style={styles.incomeInfo}>
+                    <Text style={styles.incomeName}>{income.name}</Text>
+                    <Text style={styles.incomeAmount}>{formatCurrency(income.amount)}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.removeIncomeButton}
+                    onPress={() => removeAdditionalIncome(income.id)}
+                  >
+                    <Ionicons name="close" size={16} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+
+              {additionalIncomes.length > 0 && (
+                <View style={styles.totalIncomeContainer}>
+                  <Text style={styles.totalIncomeLabel}>Teljes havi bevétel:</Text>
+                  <Text style={styles.totalIncomeValue}>{formatCurrency(getTotalMonthlyIncome())}</Text>
+                  <View style={styles.totalIncomeBreakdown}>
+                    <Text style={styles.totalIncomeBreakdownText}>Nettó bér: {formatCurrency(eredmény.netto)}</Text>
+                    <Text style={styles.totalIncomeBreakdownText}>
+                      Egyéb jövedelem: {formatCurrency(additionalIncomes.reduce((sum, income) => sum + income.amount, 0))}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+
+            {/* Employer costs */}
+            <View style={styles.employerCosts}>
+              <Text style={styles.employerCostsTitle}>Munkáltatói terhek:</Text>
+              <Text style={styles.employerCostsText}>
+                Szoc. hozzájárulás: {formatCurrency(eredmény.szocHozzjarulas)}
+              </Text>
+              <Text style={styles.employerCostsTotal}>
+                Teljes költség: {formatCurrency(eredmény.teljesMunkaltaroiKoltseg)}
+              </Text>
+            </View>
+
+            {/* GYED info */}
+            {eredmény.gyedMunkavMellett > 0 && (
+              <View style={styles.gyedInfo}>
+                <Text style={styles.gyedInfoTitle}>GYED munkavégzés mellett:</Text>
+                <Text style={styles.gyedInfoText}>
+                  Összeg: {formatCurrency(eredmény.gyedMunkavMellett)}
+                </Text>
+                <Text style={styles.gyedInfoNote}>
+                  ✓ Adómentes juttatás (nem része az SZJA alapnak)
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* Saved Calculations */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Korábbi kalkulációk</Text>
+        {savedCalculations.length > 0 ? (
+          savedCalculations.map((calc) => (
+            <View key={calc.id} style={styles.calculationCard}>
+              <View style={styles.calculationHeader}>
+                <Text style={styles.calculationName}>
+                  {users.find(u => u.id === calc.family_member_id)?.user_metadata?.full_name || 'Ismeretlen'} - 
+                  {new Date(calc.created_at).toLocaleDateString('hu-HU', { month: 'long' })}
+                </Text>
+                <Text style={styles.calculationDate}>
+                  {new Date(calc.created_at).toLocaleDateString('hu-HU')}
+                </Text>
+              </View>
+              
+              <View style={styles.calculationDetails}>
+                <View style={styles.calculationDetailRow}>
+                  <Text style={styles.calculationDetailLabel}>Alapbér:</Text>
+                  <Text style={styles.calculationDetailValue}>{calc.alapber.toLocaleString()} Ft</Text>
+                </View>
+                <View style={styles.calculationDetailRow}>
+                  <Text style={styles.calculationDetailLabel}>Ledolgozott napok:</Text>
+                  <Text style={styles.calculationDetailValue}>{calc.ledolgozott_napok} nap</Text>
+                </View>
+                <View style={styles.calculationDetailRow}>
+                  <Text style={styles.calculationDetailLabel}>Bruttó bér:</Text>
+                  <Text style={styles.calculationDetailValue}>{calc.brutto_ber.toLocaleString()} Ft</Text>
+                </View>
+                <View style={styles.calculationDetailRow}>
+                  <Text style={styles.calculationDetailLabel}>Nettó bér:</Text>
+                  <Text style={[styles.calculationDetailValue, styles.greenText]}>{calc.netto_ber.toLocaleString()} Ft</Text>
+                </View>
+              </View>
+            </View>
+          ))
+        ) : (
+          <View style={styles.emptyState}>
+            <Ionicons name="calculator" size={64} color="rgba(255, 255, 255, 0.5)" />
+            <Text style={styles.emptyStateText}>Nincs mentett kalkuláció</Text>
+            <Text style={styles.emptyStateSubtext}>
+              Számítsd ki a bért és mentsd el a jobb felső sarokban található gombbal
+            </Text>
+          </View>
+        )}
+      </View>
+    </>
+  );
+
   // Format currency helper function
   const formatCurrency = (amount: number): string => {
     return new Intl.NumberFormat('hu-HU', {
@@ -496,152 +1265,79 @@ const BudgetScreen: React.FC = () => {
     );
   }
 
-  const { total, szuksegletTotal, vagyakTotal, megtakaritasTotal } = calculateTotals();
-  const balance = expectedIncome - total;
-
   return (
     <LinearGradient colors={['#667eea', '#764ba2']} style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Költségvetés</Text>
+          <Text style={styles.headerTitle}>Pénzügyek</Text>
           <View style={styles.headerButtons}>
-            <TouchableOpacity
-              style={styles.newBudgetButton}
-              onPress={() => createNewBudget()}
-            >
-              <Ionicons name="add" size={20} color="white" />
-              <Text style={styles.newBudgetText}>Új</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.saveButton}
-              onPress={() => setShowSaveModal(true)}
-            >
-              <Ionicons name="save" size={24} color="white" />
-            </TouchableOpacity>
+            {activeTab === 'budget' ? (
+              <>
+                <TouchableOpacity
+                  style={styles.newBudgetButton}
+                  onPress={() => createNewBudget()}
+                >
+                  <Ionicons name="add" size={20} color="white" />
+                  <Text style={styles.newBudgetText}>Új</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.saveButton}
+                  onPress={() => setShowSaveModal(true)}
+                >
+                  <Ionicons name="save" size={24} color="white" />
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleSaveCalculation}
+                disabled={!eredmény}
+              >
+                <Ionicons name="save" size={24} color="white" />
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-          {/* Budget Selector */}
-          {savedBudgets.length > 0 && (
-            <View style={styles.budgetSelectorContainer}>
-              <Text style={styles.budgetSelectorTitle}>Költségvetés:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.budgetSelector}>
-                {savedBudgets.map((budget) => (
-                  <TouchableOpacity
-                    key={budget.id}
-                    style={[
-                      styles.budgetOption,
-                      selectedBudgetId === budget.id && styles.activeBudgetOption
-                    ]}
-                    onPress={() => loadBudget(budget)}
-                  >
-                    <Text style={[
-                      styles.budgetOptionText,
-                      selectedBudgetId === budget.id && styles.activeBudgetOptionText
-                    ]}>
-                      {budget.name}
-                    </Text>
-                    <Text style={styles.budgetOptionAmount}>
-                      {formatCurrency(budget.total_amount)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
+        {/* Tab Navigation */}
+        <View style={styles.tabContainer}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'budget' && styles.activeTab]}
+            onPress={() => setActiveTab('budget')}
+          >
+            <Ionicons 
+              name="wallet" 
+              size={20} 
+              color={activeTab === 'budget' ? '#14B8A6' : '#9CA3AF'} 
+            />
+            <Text style={[styles.tabText, activeTab === 'budget' && styles.activeTabText]}>
+              Költségvetés
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'salary' && styles.activeTab]}
+            onPress={() => setActiveTab('salary')}
+          >
+            <Ionicons 
+              name="calculator" 
+              size={20} 
+              color={activeTab === 'salary' ? '#14B8A6' : '#9CA3AF'} 
+            />
+            <Text style={[styles.tabText, activeTab === 'salary' && styles.activeTabText]}>
+              Bérkalkulátor
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-          {/* Summary Cards */}
-          <View style={styles.summaryContainer}>
-            <View style={[styles.summaryCard, { backgroundColor: balance >= 0 ? '#10B981' : '#EF4444' }]}>
-              <Text style={styles.summaryTitle}>Egyenleg</Text>
-              <Text style={styles.summaryAmount}>{formatCurrency(balance)}</Text>
-            </View>
-            
-            <View style={styles.summaryRow}>
-              <View style={[styles.summaryCard, styles.halfCard, { backgroundColor: '#14B8A6' }]}>
-                <Text style={styles.summaryTitle}>Bevétel</Text>
-                <Text style={styles.summaryAmount}>{formatCurrency(expectedIncome)}</Text>
-              </View>
-              <View style={[styles.summaryCard, styles.halfCard, { backgroundColor: '#EF4444' }]}>
-                <Text style={styles.summaryTitle}>Kiadás</Text>
-                <Text style={styles.summaryAmount}>{formatCurrency(total)}</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Type Summary */}
-          <View style={styles.typeSummaryContainer}>
-            <Text style={styles.sectionTitle}>Típusok szerint</Text>
-            <View style={styles.typeRow}>
-              <View style={styles.typeCard}>
-                <View style={[styles.typeIndicator, { backgroundColor: getTypeColor('Szükséglet') }]} />
-                <Text style={styles.typeLabel}>Szükséglet</Text>
-                <Text style={styles.typeAmount}>{formatCurrency(szuksegletTotal)}</Text>
-              </View>
-              <View style={styles.typeCard}>
-                <View style={[styles.typeIndicator, { backgroundColor: getTypeColor('Vágyak') }]} />
-                <Text style={styles.typeLabel}>Vágyak</Text>
-                <Text style={styles.typeAmount}>{formatCurrency(vagyakTotal)}</Text>
-              </View>
-              <View style={styles.typeCard}>
-                <View style={[styles.typeIndicator, { backgroundColor: getTypeColor('Megtakarítás') }]} />
-                <Text style={styles.typeLabel}>Megtakarítás</Text>
-                <Text style={styles.typeAmount}>{formatCurrency(megtakaritasTotal)}</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Categories */}
-          <View style={styles.categoriesContainer}>
-            <Text style={styles.sectionTitle}>Kategóriák</Text>
-            {budgetData.map((category, categoryIndex) => (
-              <View key={category.name} style={styles.categoryContainer}>
-                <View style={styles.categoryHeader}>
-                  <View style={styles.categoryTitleRow}>
-                    <Ionicons 
-                      name={getCategoryIcon(category.name) as any} 
-                      size={24} 
-                      color="#14B8A6" 
-                    />
-                    <Text style={styles.categoryTitle}>{category.name}</Text>
-                  </View>
-                  <Text style={styles.categoryTotal}>
-                    {formatCurrency(getCategoryTotal(category))}
-                  </Text>
-                </View>
-
-                {category.items.map((item, itemIndex) => (
-                  <View key={item.id} style={styles.budgetItem}>
-                    <View style={styles.itemLeft}>
-                      <Text style={styles.itemName}>{item.subcategory}</Text>
-                      {item.type && (
-                        <View style={[styles.typeBadge, { backgroundColor: getTypeColor(item.type) }]}>
-                          <Text style={styles.typeBadgeText}>{item.type}</Text>
-                        </View>
-                      )}
-                    </View>
-                    <TouchableOpacity
-                      style={styles.itemAmount}
-                      onPress={() => setEditingItem({ categoryIndex, itemIndex })}
-                    >
-                      <Text style={styles.itemAmountText}>{formatCurrency(item.amount)}</Text>
-                      <Ionicons name="pencil" size={16} color="#6B7280" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-
-                <TouchableOpacity
-                  style={styles.addItemButton}
-                  onPress={() => addItem(categoryIndex)}
-                >
-                  <Ionicons name="add" size={20} color="#14B8A6" />
-                  <Text style={styles.addItemText}>Új tétel hozzáadása</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
+        <ScrollView 
+          style={styles.scrollView} 
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+        >
+          {activeTab === 'budget' ? renderBudgetContent() : renderSalaryContent()}
         </ScrollView>
 
         {/* Save Modal */}
@@ -818,6 +1514,109 @@ const BudgetScreen: React.FC = () => {
             </View>
           </Modal>
         )}
+
+        {/* Family Member Selection Modal */}
+        <Modal
+          visible={isFamilyMemberModalVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setIsFamilyMemberModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Családtag választása</Text>
+                <TouchableOpacity onPress={() => setIsFamilyMemberModalVisible(false)}>
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+              
+              <ScrollView style={styles.modalBody}>
+                {users.map((user) => (
+                  <TouchableOpacity
+                    key={user.id}
+                    style={[
+                      styles.familyMemberOption,
+                      familyMember === user.id && styles.activeFamilyMemberOption
+                    ]}
+                    onPress={() => {
+                      setFamilyMember(user.id);
+                      setIsFamilyMemberModalVisible(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.familyMemberOptionText,
+                      familyMember === user.id && styles.activeFamilyMemberOptionText
+                    ]}>
+                      {user.user_metadata?.full_name || user.email}
+                    </Text>
+                    {familyMember === user.id && (
+                      <Ionicons name="checkmark" size={20} color="#14B8A6" />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Additional Income Modal */}
+        <Modal
+          visible={isAdditionalIncomeModalVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setIsAdditionalIncomeModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Új jövedelem hozzáadása</Text>
+                <TouchableOpacity onPress={() => setIsAdditionalIncomeModalVisible(false)}>
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.modalBody}>
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>Megnevezés</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={newIncome.name}
+                    onChangeText={(text) => setNewIncome({ ...newIncome, name: text })}
+                    placeholder="pl. Családi pótlék"
+                  />
+                </View>
+                
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>Összeg (Ft/hó)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={newIncome.amount.toString()}
+                    onChangeText={(text) => setNewIncome({ ...newIncome, amount: parseInt(text) || 0 })}
+                    keyboardType="numeric"
+                    placeholder="0"
+                  />
+                </View>
+              </View>
+              
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.cancelModalButton}
+                  onPress={() => setIsAdditionalIncomeModalVisible(false)}
+                >
+                  <Text style={styles.cancelModalText}>Mégse</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.saveModalButton}
+                  onPress={addAdditionalIncome}
+                >
+                  <Text style={styles.saveModalText}>Hozzáad</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -1238,6 +2037,403 @@ const styles = StyleSheet.create({
   readOnlyText: {
     fontSize: 14,
     color: '#666',
+  },
+  
+  // Tab navigation styles
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    margin: 16,
+    padding: 4,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  activeTab: {
+    backgroundColor: '#14B8A6',
+  },
+  tabText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  activeTabText: {
+    color: '#FFFFFF',
+  },
+  
+  // Additional budget styles
+  selectedBudgetOption: {
+    backgroundColor: 'rgba(20, 184, 166, 0.2)',
+    borderColor: '#14B8A6',
+  },
+  selectedBudgetOptionText: {
+    color: '#14B8A6',
+  },
+  
+  // Balance styles
+  balanceContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  balanceTitle: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  positiveBalance: {
+    color: '#10B981',
+  },
+  negativeBalance: {
+    color: '#EF4444',
+  },
+  
+  // Summary styles
+  summaryItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  summaryLabel: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  
+  // Type styles
+  typeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  
+  // Categories styles
+  categoryCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+  itemsContainer: {
+    marginTop: 8,
+  },
+  
+  // Salary calculator styles
+  itemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+  },
+  itemRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  section: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  familyMemberSelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    padding: 16,
+  },
+  familyMemberText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  inputHint: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  resultCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+  },
+  resultItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  resultLabel: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+  },
+  resultValue: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  resultHint: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  mainResult: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.2)',
+    paddingTop: 12,
+    marginTop: 8,
+  },
+  greenText: {
+    color: '#4ADE80',
+  },
+  redText: {
+    color: '#EF4444',
+  },
+  blueText: {
+    color: '#14B8A6',
+  },
+  largeText: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  additionalIncomesSection: {
+    marginTop: 16,
+  },
+  additionalIncomesHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  additionalIncomesTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  addIncomeButton: {
+    backgroundColor: 'rgba(20, 184, 166, 0.2)',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#14B8A6',
+    borderStyle: 'dashed',
+  },
+  addIncomeButtonText: {
+    color: '#14B8A6',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  incomeItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+  },
+  incomeInfo: {
+    flex: 1,
+  },
+  incomeName: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  incomeAmount: {
+    color: '#14B8A6',
+    fontSize: 14,
+    marginTop: 2,
+  },
+  removeIncomeButton: {
+    backgroundColor: '#EF4444',
+    borderRadius: 8,
+    padding: 8,
+    marginLeft: 12,
+  },
+  totalIncomeContainer: {
+    backgroundColor: 'rgba(20, 184, 166, 0.1)',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  totalIncomeLabel: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  totalIncomeValue: {
+    color: '#14B8A6',
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  totalIncomeBreakdown: {
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  totalIncomeBreakdownText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 12,
+  },
+  employerCosts: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+  },
+  employerCostsTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  employerCostsText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  employerCostsTotal: {
+    color: '#14B8A6',
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 8,
+  },
+  gyedInfo: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+  },
+  gyedInfoTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  gyedInfoText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  gyedInfoNote: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 12,
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  calculationCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+  calculationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  calculationName: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  calculationDate: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 12,
+  },
+  calculationDetails: {
+    marginTop: 8,
+  },
+  calculationDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  calculationDetailLabel: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+  },
+  calculationDetailValue: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  emptyState: {
+    alignItems: 'center',
+    padding: 32,
+  },
+  emptyStateText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  emptyStateSubtext: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  familyMemberOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  activeFamilyMemberOption: {
+    backgroundColor: 'rgba(20, 184, 166, 0.1)',
+  },
+  familyMemberOptionText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+  },
+  activeFamilyMemberOptionText: {
+    color: '#14B8A6',
+  },
+  cancelModalButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    marginRight: 12,
+  },
+  cancelModalText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+  },
+  saveModalButton: {
+    backgroundColor: '#14B8A6',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+  },
+  saveModalText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 
