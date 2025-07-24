@@ -372,6 +372,85 @@ const BudgetScreen: React.FC = () => {
     }
   };
 
+  // Új költségvetés létrehozása
+  const createNewBudget = () => {
+    Alert.alert(
+      'Új költségvetés',
+      'Szeretnél új költségvetést létrehozni? Az aktuális módosítások elvesznek.',
+      [
+        {
+          text: 'Mégse',
+          style: 'cancel',
+        },
+        {
+          text: 'Új költségvetés',
+          style: 'destructive',
+          onPress: () => {
+            // Reset minden adat
+            setBudgetData(createInitialBudgetData());
+            setSelectedBudgetId('');
+            setBudgetName('');
+            setBudgetDescription('');
+            Alert.alert('Új költségvetés', 'Új költségvetés létrehozva! Ne felejts el menteni.');
+          },
+        },
+      ]
+    );
+  };
+
+  // Költségvetés törlése
+  const deleteBudget = async () => {
+    if (!selectedBudgetId || !user) {
+      Alert.alert('Hiba', 'Nincs kiválasztott költségvetés törölhető!');
+      return;
+    }
+
+    Alert.alert(
+      'Költségvetés törlése',
+      'Biztosan törölni szeretnéd ezt a költségvetést? Ez a művelet nem vonható vissza.',
+      [
+        {
+          text: 'Mégse',
+          style: 'cancel',
+        },
+        {
+          text: 'Törlés',
+          style: 'destructive',
+          onPress: async () => {
+            setIsLoading(true);
+            try {
+              const { error } = await supabase
+                .from('budget_plans')
+                .delete()
+                .eq('id', selectedBudgetId)
+                .eq('user_id', user.id);
+
+              if (error) {
+                console.error('Hiba a törlés során:', error);
+                Alert.alert('Hiba', 'Nem sikerült törölni a költségvetést');
+              } else {
+                Alert.alert('Siker', 'Költségvetés sikeresen törölve!');
+                // Reset minden adat
+                setBudgetData(createInitialBudgetData());
+                setSelectedBudgetId('');
+                setBudgetName('');
+                setBudgetDescription('');
+                setShowSaveModal(false);
+                // Adatok újra betöltése
+                loadData();
+              }
+            } catch (error) {
+              console.error('Hiba a törlés során:', error);
+              Alert.alert('Hiba', 'Nem sikerült törölni a költségvetést');
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // Format currency helper function
   const formatCurrency = (amount: number): string => {
     return new Intl.NumberFormat('hu-HU', {
@@ -426,15 +505,53 @@ const BudgetScreen: React.FC = () => {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Költségvetés</Text>
-          <TouchableOpacity
-            style={styles.saveButton}
-            onPress={() => setShowSaveModal(true)}
-          >
-            <Ionicons name="save" size={24} color="white" />
-          </TouchableOpacity>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity
+              style={styles.newBudgetButton}
+              onPress={() => createNewBudget()}
+            >
+              <Ionicons name="add" size={20} color="white" />
+              <Text style={styles.newBudgetText}>Új</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.saveButton}
+              onPress={() => setShowSaveModal(true)}
+            >
+              <Ionicons name="save" size={24} color="white" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+          {/* Budget Selector */}
+          {savedBudgets.length > 0 && (
+            <View style={styles.budgetSelectorContainer}>
+              <Text style={styles.budgetSelectorTitle}>Költségvetés:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.budgetSelector}>
+                {savedBudgets.map((budget) => (
+                  <TouchableOpacity
+                    key={budget.id}
+                    style={[
+                      styles.budgetOption,
+                      selectedBudgetId === budget.id && styles.activeBudgetOption
+                    ]}
+                    onPress={() => loadBudget(budget)}
+                  >
+                    <Text style={[
+                      styles.budgetOptionText,
+                      selectedBudgetId === budget.id && styles.activeBudgetOptionText
+                    ]}>
+                      {budget.name}
+                    </Text>
+                    <Text style={styles.budgetOptionAmount}>
+                      {formatCurrency(budget.total_amount)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
           {/* Summary Cards */}
           <View style={styles.summaryContainer}>
             <View style={[styles.summaryCard, { backgroundColor: balance >= 0 ? '#10B981' : '#EF4444' }]}>
@@ -559,22 +676,35 @@ const BudgetScreen: React.FC = () => {
                 numberOfLines={3}
               />
 
-              <TouchableOpacity
-                style={styles.saveActionButton}
-                onPress={saveBudget}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <ActivityIndicator size="small" color="white" />
-                ) : (
-                  <>
-                    <Ionicons name="save" size={20} color="white" />
-                    <Text style={styles.saveActionText}>
-                      {selectedBudgetId ? 'Frissítés' : 'Mentés'}
-                    </Text>
-                  </>
+              <View style={styles.modalButtons}>
+                {selectedBudgetId && (
+                  <TouchableOpacity
+                    style={styles.deleteModalButton}
+                    onPress={deleteBudget}
+                    disabled={isLoading}
+                  >
+                    <Ionicons name="trash" size={20} color="white" />
+                    <Text style={styles.deleteModalText}>Törlés</Text>
+                  </TouchableOpacity>
                 )}
-              </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.saveActionButton, selectedBudgetId && styles.saveActionButtonFlex]}
+                  onPress={saveBudget}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator size="small" color="white" />
+                  ) : (
+                    <>
+                      <Ionicons name="save" size={20} color="white" />
+                      <Text style={styles.saveActionText}>
+                        {selectedBudgetId ? 'Frissítés' : 'Mentés'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </Modal>
@@ -726,6 +856,65 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 20,
     padding: 8,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  newBudgetButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  newBudgetText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  budgetSelectorContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginHorizontal: 20,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  budgetSelectorTitle: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 12,
+  },
+  budgetSelector: {
+    flexDirection: 'row',
+  },
+  budgetOption: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 8,
+    padding: 12,
+    marginRight: 12,
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  activeBudgetOption: {
+    backgroundColor: 'white',
+  },
+  budgetOptionText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  activeBudgetOptionText: {
+    color: '#333',
+  },
+  budgetOptionAmount: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 12,
   },
   scrollView: {
     flex: 1,
@@ -942,6 +1131,28 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  deleteModalButton: {
+    flex: 1,
+    backgroundColor: '#EF4444',
+    borderRadius: 8,
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  deleteModalText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  saveActionButtonFlex: {
+    flex: 1,
   },
   actionButtons: {
     flexDirection: 'row',
