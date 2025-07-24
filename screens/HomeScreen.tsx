@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -9,6 +10,7 @@ import {
   Dimensions,
   SafeAreaView,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -79,6 +81,7 @@ export default function HomeScreen({ navigation }: any) {
   });
   const [categoryData, setCategoryData] = useState<CategoryData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadDashboardData = useCallback(async () => {
     if (!user) return;
@@ -210,11 +213,27 @@ export default function HomeScreen({ navigation }: any) {
     }
   }, [user]);
 
+  // Pull-to-refresh funkció
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadDashboardData();
+    setRefreshing(false);
+  }, [loadDashboardData]);
+
   useEffect(() => {
     if (user) {
       loadDashboardData();
     }
   }, [user, loadDashboardData]);
+
+  // Automatikus frissítés, amikor a screen fókuszba kerül
+  useFocusEffect(
+    useCallback(() => {
+      if (user) {
+        loadDashboardData();
+      }
+    }, [user, loadDashboardData])
+  );
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('hu-HU', {
@@ -295,7 +314,19 @@ export default function HomeScreen({ navigation }: any) {
       style={styles.container}
     >
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        <ScrollView 
+          style={styles.scrollView} 
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="white"
+              title="Frissítés..."
+              titleColor="white"
+            />
+          }
+        >
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerContent}>

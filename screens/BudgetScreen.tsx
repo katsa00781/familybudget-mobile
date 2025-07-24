@@ -245,6 +245,34 @@ const BudgetScreen: React.FC = () => {
     ));
   };
 
+  // Tétel név módosítása
+  const updateItemName = (categoryIndex: number, itemIndex: number, newName: string) => {
+    setBudgetData(prev => prev.map((category, catIdx) => 
+      catIdx === categoryIndex 
+        ? {
+            ...category,
+            items: category.items.map((item, itemIdx) => 
+              itemIdx === itemIndex ? { ...item, subcategory: newName } : item
+            )
+          }
+        : category
+    ));
+  };
+
+  // Tétel típus módosítása
+  const updateItemType = (categoryIndex: number, itemIndex: number, newType: 'Szükséglet' | 'Vágyak' | 'Megtakarítás' | '') => {
+    setBudgetData(prev => prev.map((category, catIdx) => 
+      catIdx === categoryIndex 
+        ? {
+            ...category,
+            items: category.items.map((item, itemIdx) => 
+              itemIdx === itemIndex ? { ...item, type: newType } : item
+            )
+          }
+        : category
+    ));
+  };
+
   // Új tétel hozzáadása
   const addItem = (categoryIndex: number) => {
     const newData = [...budgetData];
@@ -568,13 +596,73 @@ const BudgetScreen: React.FC = () => {
                   </TouchableOpacity>
                 </View>
 
-                <TextInput
-                  style={styles.input}
-                  placeholder="Összeg"
-                  value={budgetData[editingItem.categoryIndex].items[editingItem.itemIndex].amount.toString()}
-                  onChangeText={(text) => updateAmount(editingItem.categoryIndex, editingItem.itemIndex, text)}
-                  keyboardType="numeric"
-                />
+                <ScrollView style={styles.modalBody}>
+                  {/* Tétel neve */}
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Tétel neve</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Tétel neve"
+                      value={budgetData[editingItem.categoryIndex].items[editingItem.itemIndex].subcategory}
+                      onChangeText={(text) => updateItemName(editingItem.categoryIndex, editingItem.itemIndex, text)}
+                    />
+                  </View>
+
+                  {/* Összeg */}
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Összeg (Ft)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="0"
+                      value={budgetData[editingItem.categoryIndex].items[editingItem.itemIndex].amount.toString()}
+                      onChangeText={(text) => updateAmount(editingItem.categoryIndex, editingItem.itemIndex, text)}
+                      keyboardType="numeric"
+                    />
+                  </View>
+
+                  {/* Típus választó */}
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Típus</Text>
+                    <View style={styles.typeSelector}>
+                      {(['', 'Szükséglet', 'Vágyak', 'Megtakarítás'] as const).map((typeOption) => (
+                        <TouchableOpacity
+                          key={typeOption}
+                          style={[
+                            styles.typeOption,
+                            budgetData[editingItem.categoryIndex].items[editingItem.itemIndex].type === typeOption && styles.activeTypeOption
+                          ]}
+                          onPress={() => updateItemType(editingItem.categoryIndex, editingItem.itemIndex, typeOption)}
+                        >
+                          <View style={[
+                            styles.typeOptionIndicator,
+                            { backgroundColor: getTypeColor(typeOption || 'default') }
+                          ]} />
+                          <Text style={[
+                            styles.typeOptionText,
+                            budgetData[editingItem.categoryIndex].items[editingItem.itemIndex].type === typeOption && styles.activeTypeOptionText
+                          ]}>
+                            {typeOption || 'Nincs típus'}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  {/* Kategória info (csak olvasható) */}
+                  <View style={styles.inputContainer}>
+                    <Text style={styles.inputLabel}>Kategória</Text>
+                    <View style={styles.readOnlyField}>
+                      <Ionicons 
+                        name={getCategoryIcon(budgetData[editingItem.categoryIndex].name) as any} 
+                        size={20} 
+                        color="#14B8A6" 
+                      />
+                      <Text style={styles.readOnlyText}>
+                        {budgetData[editingItem.categoryIndex].name}
+                      </Text>
+                    </View>
+                  </View>
+                </ScrollView>
 
                 <View style={styles.actionButtons}>
                   <TouchableOpacity
@@ -592,7 +680,8 @@ const BudgetScreen: React.FC = () => {
                     style={styles.confirmButton}
                     onPress={() => setEditingItem(null)}
                   >
-                    <Text style={styles.confirmButtonText}>Kész</Text>
+                    <Ionicons name="checkmark" size={20} color="white" />
+                    <Text style={styles.confirmButtonText}>Mentés</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -873,6 +962,61 @@ const styles = StyleSheet.create({
   confirmButtonText: {
     color: 'white',
     fontWeight: 'bold',
+  },
+  modalBody: {
+    maxHeight: 400,
+  },
+  inputContainer: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  typeSelector: {
+    gap: 8,
+  },
+  typeOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 8,
+  },
+  activeTypeOption: {
+    borderColor: '#14B8A6',
+    backgroundColor: '#F0FDFA',
+  },
+  typeOptionIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  typeOptionText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  activeTypeOptionText: {
+    color: '#14B8A6',
+    fontWeight: '500',
+  },
+  readOnlyField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 8,
+    gap: 8,
+  },
+  readOnlyText: {
+    fontSize: 14,
+    color: '#666',
   },
 });
 
