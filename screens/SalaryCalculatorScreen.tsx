@@ -27,6 +27,7 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
   const [overtimeHours, setOvertimeHours] = useState('0');
   const [nightShiftHours, setNightShiftHours] = useState('0');
   const [familyAllowance, setFamilyAllowance] = useState('0');
+  const [otherIncome, setOtherIncome] = useState('170000');
   const [calculation, setCalculation] = useState<SalaryCalculation | null>(null);
 
   const calculateSalary = () => {
@@ -38,13 +39,13 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
     // Túlóra és műszakpótlék számítása
     const hourlyRate = gross / 174; // Havi 174 óra átlag
     const overtimePay = overtime * hourlyRate * 1.5; // 150% túlórapótlék
-    const nightShiftPay = nightShift * hourlyRate * 0.15; // 15% műszakpótlék
+    const nightShiftPay = nightShift; // Műszakpótlék fix összeg
 
     const totalGross = gross + overtimePay + nightShiftPay + allowance;
 
     // Járulékok számítása (2025-ös magyar adórendszer)
-    const personalTax = totalGross * 0.15; // 15% személyi jövedelemadó
     const socialSecurity = totalGross * 0.185; // 18.5% társadalombiztosítás
+    const personalTax = totalGross * 0.15; // 15% személyi jövedelemadó
     const healthInsurance = totalGross * 0.07; // 7% egészségügyi hozzájárulás
     const unemploymentInsurance = totalGross * 0.015; // 1.5% munkanélküli járulék
 
@@ -170,7 +171,7 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
 
         {/* Számítás gomb */}
         <TouchableOpacity style={styles.calculateButton} onPress={calculateSalary}>
-          <Text style={styles.calculateButtonText}>Adómentes</Text>
+          <Text style={styles.calculateButtonText}>Számítás</Text>
         </TouchableOpacity>
 
         {/* Eredmények */}
@@ -182,17 +183,23 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
               <Text style={styles.totalAmount}>{formatCurrency(calculation.grossSalary)}</Text>
               
               <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>• Alapbér (22 nap): {grossSalary} Ft</Text>
+                <Text style={styles.detailLabel}>• Alapbér ({workingDays} nap): {formatCurrency(parseFloat(grossSalary) || 0)}</Text>
               </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>• Túlóra (8 óra): 30,000 Ft</Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>• Műszakpótlék: 20,000 Ft</Text>
-              </View>
-              <View style={styles.detailItem}>
-                <Text style={styles.detailLabel}>• GYED melletti: 0 Ft</Text>
-              </View>
+              {parseFloat(overtimeHours) > 0 && (
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>• Túlóra ({overtimeHours} óra): {formatCurrency((parseFloat(overtimeHours) || 0) * ((parseFloat(grossSalary) || 0) / 174) * 1.5)}</Text>
+                </View>
+              )}
+              {parseFloat(nightShiftHours) > 0 && (
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>• Műszakpótlék: {formatCurrency(parseFloat(nightShiftHours) || 0)}</Text>
+                </View>
+              )}
+              {parseFloat(familyAllowance) > 0 && (
+                <View style={styles.detailItem}>
+                  <Text style={styles.detailLabel}>• GYED melletti: {formatCurrency(parseFloat(familyAllowance) || 0)}</Text>
+                </View>
+              )}
             </View>
 
             {/* Levonások */}
@@ -221,7 +228,52 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
               </View>
               <View style={styles.netBreakdown}>
                 <Text style={styles.netLabel}>Egyéb jövedelem:</Text>
-                <Text style={styles.netValue}>170,000 Ft</Text>
+                <Text style={styles.netValue}>{formatCurrency(parseFloat(otherIncome))}</Text>
+              </View>
+            </View>
+
+            {/* Teljes havi bevétel */}
+            <View style={styles.section}>
+              <View style={styles.monthlyIncomeContainer}>
+                <Text style={styles.monthlyIncomeTitle}>Teljes havi bevétel</Text>
+                <Text style={styles.monthlyIncomeAmount}>{formatCurrency(calculation.netSalary + parseFloat(otherIncome))}</Text>
+                
+                <View style={styles.monthlyIncomeBreakdown}>
+                  <View style={styles.monthlyIncomeRow}>
+                    <Text style={styles.monthlyIncomeLabel}>Nettó bér:</Text>
+                    <Text style={styles.monthlyIncomeValue}>{formatCurrency(calculation.netSalary)}</Text>
+                  </View>
+                  <View style={styles.monthlyIncomeRow}>
+                    <Text style={styles.monthlyIncomeLabel}>Egyéb jövedelem:</Text>
+                    <Text style={styles.monthlyIncomeValue}>{formatCurrency(parseFloat(otherIncome))}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {/* Egyéb jövedelmek */}
+            <View style={styles.section}>
+              <Text style={styles.sectionIcon}>🏠</Text>
+              <Text style={styles.sectionTitle}>Egyéb jövedelmek</Text>
+              
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Lakáskiadás</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="120000"
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Osztalék</Text>
+                <TextInput
+                  style={styles.input}
+                  value={otherIncome}
+                  onChangeText={setOtherIncome}
+                  placeholder="50000"
+                  keyboardType="numeric"
+                />
               </View>
             </View>
 
@@ -229,6 +281,20 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Összes levonás</Text>
               <Text style={styles.totalDeductionAmount}>{formatCurrency(calculation.totalDeductions)}</Text>
+            </View>
+
+            {/* Munkáltatói terhek */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>MUNKÁLTATÓI TERHEK</Text>
+              
+              <View style={styles.employerCostItem}>
+                <Text style={styles.employerCostLabel}>Szociális hozzájárulás (13%)</Text>
+                <Text style={styles.employerCostValue}>{formatCurrency(calculation.grossSalary * 0.13)}</Text>
+              </View>
+              <View style={styles.employerCostItem}>
+                <Text style={styles.employerCostLabel}>Teljes munkáltatói költség</Text>
+                <Text style={styles.employerCostValue}>{formatCurrency(calculation.grossSalary * 1.13)}</Text>
+              </View>
             </View>
 
             {/* Mentés gombok */}
@@ -489,5 +555,59 @@ const styles = StyleSheet.create({
   },
   bottomSpacer: {
     height: 20,
+  },
+  monthlyIncomeContainer: {
+    backgroundColor: '#14b8a6',
+    borderRadius: 12,
+    padding: 20,
+  },
+  monthlyIncomeTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 8,
+  },
+  monthlyIncomeAmount: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 16,
+  },
+  monthlyIncomeBreakdown: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.3)',
+    paddingTop: 16,
+  },
+  monthlyIncomeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  monthlyIncomeLabel: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+  },
+  monthlyIncomeValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'white',
+  },
+  employerCostItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  employerCostLabel: {
+    fontSize: 14,
+    color: '#374151',
+  },
+  employerCostValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#dc2626',
   },
 });
