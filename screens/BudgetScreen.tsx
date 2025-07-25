@@ -804,8 +804,9 @@ const BudgetScreen: React.FC = () => {
         user_id: user.id,
         name: calculationName,
         description: `Bérkalkuláció alapján: ${formatCurrency(eredmény.netto)} nettó bér + ${formatCurrency(additionalIncomes.reduce((sum, income) => sum + income.amount, 0))} egyéb jövedelem`,
-        total_income: totalMonthlyIncome,
-        calculation_name: calculationName, // Külön mező a kalkuláció nevének
+        monthly_income: eredmény.netto, // Nettó bér
+        additional_incomes: additionalIncomes, // Egyéb jövedelmek
+        total_income: totalMonthlyIncome, // Teljes havi jövedelem
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -894,13 +895,14 @@ const BudgetScreen: React.FC = () => {
                 return;
               }
 
-              // A kapcsolódó income plan-t a calculationName alapján töröljük
-              if (calculationName && user) {
+              // A kapcsolódó income plan-t a név alapján töröljük
+              if (user) {
+                // Megkeressük a kapcsolódó bevételi tervet az aktuálisan mentett név alapján
                 const { error: incomeError } = await supabase
                   .from('income_plans')
                   .delete()
                   .eq('user_id', user.id)
-                  .eq('calculation_name', calculationName);
+                  .ilike('name', `%${new Date().toLocaleDateString('hu-HU', { month: 'long', year: 'numeric' })}%`);
 
                 if (incomeError) {
                   console.warn('Error deleting related income plan:', incomeError);
