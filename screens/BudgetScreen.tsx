@@ -64,6 +64,7 @@ interface SavedCalculation {
   brutto_ber: number;
   netto_ber: number;
   created_at: string;
+  additional_incomes?: string;
 }
 
 interface User {
@@ -232,6 +233,8 @@ const BudgetScreen: React.FC = () => {
   const [isFamilyMemberModalVisible, setIsFamilyMemberModalVisible] = useState(false);
   const [isAdditionalIncomeModalVisible, setIsAdditionalIncomeModalVisible] = useState(false);
   const [newIncome, setNewIncome] = useState({ name: '', amount: 0 });
+  const [editingCalculation, setEditingCalculation] = useState<SavedCalculation | null>(null);
+  const [isEditCalculationModalVisible, setIsEditCalculationModalVisible] = useState(false);
 
   // Számított értékek
   const ledolgozottOrak = ledolgozottNapok * 8.1;
@@ -804,6 +807,65 @@ const BudgetScreen: React.FC = () => {
     return nettoSalary + additionalTotal;
   }, [eredmény, additionalIncomes]);
 
+  // Kalkuláció törlése
+  const deleteCalculation = async (calculationId: string) => {
+    Alert.alert(
+      'Kalkuláció törlése',
+      'Biztosan törölni szeretnéd ezt a kalkulációt?',
+      [
+        {
+          text: 'Mégse',
+          style: 'cancel',
+        },
+        {
+          text: 'Törlés',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('salary_calculations')
+                .delete()
+                .eq('id', calculationId);
+
+              if (error) {
+                console.error('Error deleting calculation:', error);
+                Alert.alert('Hiba', 'Nem sikerült törölni a kalkulációt');
+              } else {
+                Alert.alert('Siker', 'Kalkuláció sikeresen törölve!');
+                fetchSavedCalculations();
+              }
+            } catch (error) {
+              console.error('Error:', error);
+              Alert.alert('Hiba', 'Hiba történt a törlés során!');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Kalkuláció betöltése szerkesztéshez
+  const loadCalculationForEdit = (calculation: SavedCalculation) => {
+    setEditingCalculation(calculation);
+    
+    // Alapértékek beállítása a mentett kalkulációból
+    setAlapber(calculation.alapber);
+    setLedolgozottNapok(calculation.ledolgozott_napok);
+    
+    // Ha van additional_incomes mező, akkor azt is betöltjük
+    if (calculation.additional_incomes) {
+      try {
+        const additionalIncomesData = JSON.parse(calculation.additional_incomes);
+        setAdditionalIncomes(additionalIncomesData || []);
+      } catch (error) {
+        console.error('Error parsing additional incomes:', error);
+        setAdditionalIncomes([]);
+      }
+    }
+    
+    Alert.alert('Kalkuláció betöltve', 'A kalkuláció adatai betöltésre kerültek. Módosítsd az értékeket és mentsd el újra.');
+  };
+
   // Pull to refresh
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -1178,13 +1240,29 @@ const BudgetScreen: React.FC = () => {
           savedCalculations.map((calc) => (
             <View key={calc.id} style={styles.calculationCard}>
               <View style={styles.calculationHeader}>
-                <Text style={styles.calculationName}>
-                  {users.find(u => u.id === calc.family_member_id)?.user_metadata?.full_name || 'Ismeretlen'} - 
-                  {new Date(calc.created_at).toLocaleDateString('hu-HU', { month: 'long' })}
-                </Text>
-                <Text style={styles.calculationDate}>
-                  {new Date(calc.created_at).toLocaleDateString('hu-HU')}
-                </Text>
+                <View style={styles.calculationTitleContainer}>
+                  <Text style={styles.calculationName}>
+                    {users.find(u => u.id === calc.family_member_id)?.user_metadata?.full_name || 'Ismeretlen'} - 
+                    {new Date(calc.created_at).toLocaleDateString('hu-HU', { month: 'long' })}
+                  </Text>
+                  <Text style={styles.calculationDate}>
+                    {new Date(calc.created_at).toLocaleDateString('hu-HU')}
+                  </Text>
+                </View>
+                <View style={styles.calculationActions}>
+                  <TouchableOpacity
+                    style={styles.editCalculationButton}
+                    onPress={() => loadCalculationForEdit(calc)}
+                  >
+                    <Ionicons name="pencil" size={16} color="#14B8A6" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deleteCalculationButton}
+                    onPress={() => deleteCalculation(calc.id)}
+                  >
+                    <Ionicons name="trash" size={16} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
               </View>
               
               <View style={styles.calculationDetails}>
@@ -2434,6 +2512,24 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  calculationTitleContainer: {
+    flex: 1,
+  },
+  calculationActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editCalculationButton: {
+    backgroundColor: 'rgba(20, 184, 166, 0.2)',
+    borderRadius: 8,
+    padding: 8,
+  },
+  deleteCalculationButton: {
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    borderRadius: 8,
+    padding: 8,
   },
 });
 
