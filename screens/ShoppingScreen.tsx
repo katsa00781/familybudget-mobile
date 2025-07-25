@@ -781,63 +781,119 @@ const ShoppingScreen: React.FC = () => {
 
   // OCR Receipt Scanner functionality
   const handleReceiptScan = async () => {
+    // Jól látható választási lehetőség: Fotó vagy Galéria
+    Alert.alert(
+      '📷 Blokk beolvasás',
+      'Válaszd ki a képforrást:',
+      [
+        {
+          text: '📷 Fotó készítése',
+          onPress: () => takePhotoFromCamera(),
+        },
+        {
+          text: '🖼️ Galéria',
+          onPress: () => selectPhotoFromGallery(),
+        },
+        {
+          text: 'Mégse',
+          style: 'cancel',
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  // Fotó készítése kamerával
+  const takePhotoFromCamera = async () => {
     try {
       // Kamera engedély kérése
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
       
       if (permissionResult.granted === false) {
-        Alert.alert('Hiba', 'Kamera engedély szükséges a blokkzaás használatához');
+        Alert.alert('Engedély szükséges', 'Kamera engedély szükséges fotó készítéséhez. Engedélyezd a beállításokban.');
         return;
       }
 
       // Kép készítése
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [4, 3],
-        quality: 0.8, // Optimalizált minőség az OCR-hez
+        quality: 0.8,
       });
 
       if (!result.canceled && result.assets[0]) {
-        setIsProcessingReceipt(true);
-        setIsReceiptScanModalVisible(true);
-        
-        try {
-          // OCR feldolgozás
-          const receiptData = await processReceiptImage(result.assets[0].uri);
-          setScannedReceiptData(receiptData);
-          
-          Alert.alert(
-            'Blokk feldolgozva!', 
-            `${receiptData.items.length} termék felismerve ${receiptData.store ? `a(z) ${receiptData.store}-ból/ből` : ''}. Ellenőrizd és módosítsd szükség esetén.`,
-            [
-              { 
-                text: 'Mégse', 
-                style: 'cancel',
-                onPress: () => {
-                  setIsReceiptScanModalVisible(false);
-                  setScannedReceiptData(null);
-                }
-              },
-              { 
-                text: 'Elfogad', 
-                onPress: () => {
-                  // A modal marad nyitva a felhasználói ellenőrzéshez
-                }
-              }
-            ]
-          );
-        } catch (error) {
-          console.error('OCR hiba:', error);
-          Alert.alert('Hiba', 'Nem sikerült feldolgozni a blokk képét. Próbáld újra jobb megvilágítással!');
-          setIsReceiptScanModalVisible(false);
-        } finally {
-          setIsProcessingReceipt(false);
-        }
+        await processReceiptWithOCR(result.assets[0].uri);
       }
     } catch (error) {
       console.error('Kamera hiba:', error);
       Alert.alert('Hiba', 'Nem sikerült fényképet készíteni');
+    }
+  };
+
+  // Kép kiválasztása galériából
+  const selectPhotoFromGallery = async () => {
+    try {
+      // Galéria engedély kérése
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        Alert.alert('Engedély szükséges', 'Galéria engedély szükséges kép kiválasztásához. Engedélyezd a beállításokban.');
+        return;
+      }
+
+      // Kép kiválasztása
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await processReceiptWithOCR(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Galéria hiba:', error);
+      Alert.alert('Hiba', 'Nem sikerült képet kiválasztani a galériából');
+    }
+  };
+
+  // OCR feldolgozás közös funkció
+  const processReceiptWithOCR = async (imageUri: string) => {
+    setIsProcessingReceipt(true);
+    setIsReceiptScanModalVisible(true);
+    
+    try {
+      // OCR feldolgozás
+      const receiptData = await processReceiptImage(imageUri);
+      setScannedReceiptData(receiptData);
+      
+      Alert.alert(
+        'Blokk feldolgozva!', 
+        `${receiptData.items.length} termék felismerve ${receiptData.store ? `a(z) ${receiptData.store}-ból/ből` : ''}. Ellenőrizd és módosítsd szükség esetén.`,
+        [
+          { 
+            text: 'Mégse', 
+            style: 'cancel',
+            onPress: () => {
+              setIsReceiptScanModalVisible(false);
+              setScannedReceiptData(null);
+            }
+          },
+          { 
+            text: 'Elfogad', 
+            onPress: () => {
+              // A modal marad nyitva a felhasználói ellenőrzéshez
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('OCR hiba:', error);
+      Alert.alert('Hiba', 'Nem sikerült feldolgozni a blokk képét. Próbáld újra jobb megvilágítással!');
+      setIsReceiptScanModalVisible(false);
+    } finally {
       setIsProcessingReceipt(false);
     }
   };

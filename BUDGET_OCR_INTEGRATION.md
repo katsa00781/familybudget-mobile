@@ -1,24 +1,22 @@
-# OCR Receipt Scanner - BudgetScreen integráció
+# OCR Receipt Scanner - ShoppingScreen integráció
+
+## ⭐ Áthelyezve a ShoppingScreen-re!
+
+A funkció most a **ShoppingScreen** (bevásárlás/termék kezelés) alatt található, nem a költségvetésben.
 
 ## Áttekintés
 
-A BudgetScreen most tartalmaz egy integrált OCR Receipt Scanner funkciót, amely lehetővé teszi blokkok/nyugták fényképezését vagy galéria képek importálását, majd automatikus termék felismerést és költségvetésbe való integrálást.
+A ShoppingScreen most tartalmaz egy továbbfejlesztett OCR Receipt Scanner funkciót, amely lehetővé teszi blokkok/nyugták fényképezését vagy galéria képek importálását, majd automatikus termék felismerést és bevásárlólistába való integrálást.
 
 ## Új funkciók
 
-### 📷 Kamera/Galéria gomb
+### 📷 Jól látható választási lehetőségek
 
-- **Helye:** BudgetScreen header, költségvetés tab-ban
-- **Ikon:** `images` (kamera/galéria kombinált ikon)
-- **Funkció:** Receipt Scanner modal megnyitása
-
-### 🖼️ Kép választási opciók
-
-Amikor a felhasználó a kamera gombra kattint, egy Alert jelenik meg az alábbi opciókkal:
-
-1. **Fotó készítése** - Kamera használata új fénykép készítéséhez
-2. **Galéria** - Már meglévő kép kiválasztása a galéria/média könyvtárból
-3. **Mégse** - Művelet megszakítása
+- **Helye:** ShoppingScreen - OCR Receipt Scanner gomb
+- **Választási módszer:** Alert dialog két jól elkülönített opcióval:
+  1. **📷 Fotó készítése** - Kamera használata új fénykép készítéséhez  
+  2. **🖼️ Galéria** - Már meglévő kép kiválasztása a galéria/média könyvtárból
+  3. **Mégse** - Művelet megszakítása
 
 ### 🔍 OCR feldolgozás
 
@@ -27,12 +25,12 @@ Amikor a felhasználó a kamera gombra kattint, egy Alert jelenik meg az alábbi
 3. **Kategorizálás** automatikus (Háztartás, Egészség, stb.)
 4. **Árak és mennyiségek** kinyerése
 
-### 💰 Költségvetés integráció
+### � Bevásárlólista integráció
 
-- **Automatikus kategória hozzárendelés** - Ha létező kategória, hozzáadás
-- **Új kategóriák létrehozása** - Ha nem létezik a kategória
-- **Szükséglet típus** - Alapértelmezetten minden termék "Szükséglet"
-- **Egyenleg frissítés** - Automatikus összegek újraszámítása
+- **Automatikus termék hozzáadás** - Receipt termékek bevásárlólistába
+- **Kategória felismerés** - Automatikus kategorizálás
+- **Mennyiség és egység** - Pontos termék adatok
+- **Árak** - Költségbecslés támogatás
 
 ## Felhasználói felület
 
