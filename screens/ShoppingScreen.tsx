@@ -15,10 +15,13 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { useFocusEffect } from '@react-navigation/native';
 import { Product } from '../types/database';
+import { processReceiptImage, exportToJSON, importFromJSON, ReceiptData } from '../lib/receiptOCR';
 
 interface ShoppingItem {
   id: string;
@@ -76,6 +79,11 @@ const ShoppingScreen: React.FC = () => {
   const [isJsonImportModalVisible, setIsJsonImportModalVisible] = useState(false);
   const [jsonInput, setJsonInput] = useState('');
   const [isJsonImporting, setIsJsonImporting] = useState(false);
+  
+  // OCR Receipt Scanner states
+  const [isReceiptScanModalVisible, setIsReceiptScanModalVisible] = useState(false);
+  const [isProcessingReceipt, setIsProcessingReceipt] = useState(false);
+  const [scannedReceiptData, setScannedReceiptData] = useState<ReceiptData | null>(null);
   
   // Product management states
   const [isProductModalVisible, setIsProductModalVisible] = useState(false);
@@ -771,6 +779,168 @@ const ShoppingScreen: React.FC = () => {
     }
   };
 
+  // OCR Receipt Scanner functionality
+  const handleReceiptScan = async () => {
+    try {
+      // Kamera engedély kérése
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        Alert.alert('Hiba', 'Kamera engedély szükséges a blokkzaás használatához');
+        return;
+      }
+
+      // Kép készítése
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8, // Optimalizált minőség az OCR-hez
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setIsProcessingReceipt(true);
+        setIsReceiptScanModalVisible(true);
+        
+        try {
+          // OCR feldolgozás
+          const receiptData = await processReceiptImage(result.assets[0].uri);
+          setScannedReceiptData(receiptData);
+          
+          Alert.alert(
+            'Blokk feldolgozva!', 
+            `${receiptData.items.length} termék felismerve ${receiptData.store ? `a(z) ${receiptData.store}-ból/ből` : ''}. Ellenőrizd és módosítsd szükség esetén.`,
+            [
+              { 
+                text: 'Mégse', 
+                style: 'cancel',
+                onPress: () => {
+                  setIsReceiptScanModalVisible(false);
+                  setScannedReceiptData(null);
+                }
+              },
+              { 
+                text: 'Elfogad', 
+                onPress: () => {
+                  // A modal marad nyitva a felhasználói ellenőrzéshez
+                }
+              }
+            ]
+          );
+        } catch (error) {
+          console.error('OCR hiba:', error);
+          Alert.alert('Hiba', 'Nem sikerült feldolgozni a blokk képét. Próbáld újra jobb megvilágítással!');
+          setIsReceiptScanModalVisible(false);
+        } finally {
+          setIsProcessingReceipt(false);
+        }
+      }
+    } catch (error) {
+      console.error('Kamera hiba:', error);
+      Alert.alert('Hiba', 'Nem sikerült fényképet készíteni');
+      setIsProcessingReceipt(false);
+    }
+  };
+
+  // Blokk adatok importálása bevásárlólistába
+  const importReceiptToShoppingList = async () => {
+    if (!scannedReceiptData || !user) return;
+
+    try {
+      setIsProcessingReceipt(true);
+
+      // Új bevásárlólista létrehozása
+      const listName = `Blokk import - ${scannedReceiptData.store || 'Ismeretlen bolt'}`;
+      const currentDate = new Date().toISOString().split('T')[0];
+
+      const shoppingItems: ShoppingItem[] = scannedReceiptData.items.map(item => ({
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        unit: item.unit,
+        price: item.price,
+        category: item.category,
+        checked: false
+      }));
+
+      const newList: ShoppingList = {
+        id: generateId(),
+        user_id: user.id,
+        name: listName,
+        date: currentDate,
+        items: shoppingItems,
+        total_amount: scannedReceiptData.total,
+        completed: false,
+        created_at: new Date().toISOString(),
+      };
+
+      // Mentés adatbázisba
+      const { error } = await supabase
+        .from('shopping_lists')
+        .insert([{
+          id: newList.id,
+          user_id: newList.user_id,
+          name: newList.name,
+          date: newList.date,
+          items: newList.items,
+          total_amount: newList.total_amount,
+          completed: newList.completed,
+          created_at: newList.created_at,
+        }]);
+
+      if (error) {
+        console.error('Hiba a bevásárlólista mentésekor:', error);
+        Alert.alert('Hiba', 'Nem sikerült elmenteni a bevásárlólistát');
+        return;
+      }
+
+      // UI frissítése
+      setShoppingLists(prev => [newList, ...prev]);
+      
+      Alert.alert(
+        'Siker!', 
+        `Bevásárlólista létrehozva "${listName}" néven ${shoppingItems.length} termékkel.`,
+        [{ text: 'OK', onPress: () => {
+          setIsReceiptScanModalVisible(false);
+          setScannedReceiptData(null);
+        }}]
+      );
+
+    } catch (error) {
+      console.error('Hiba az import során:', error);
+      Alert.alert('Hiba', 'Hiba történt az import során');
+    } finally {
+      setIsProcessingReceipt(false);
+    }
+  };
+
+  // JSON export funkció blokkzáshoz
+  const exportReceiptToJSON = () => {
+    if (!scannedReceiptData) return;
+
+    try {
+      const jsonString = exportToJSON(scannedReceiptData);
+      
+      Alert.alert(
+        'JSON Export',
+        'A blokk adatok JSON formátumban:',
+        [
+          { text: 'Bezár', style: 'cancel' },
+          { 
+            text: 'Másolás', 
+            onPress: () => {
+              // Ideális esetben vágólapra másolás, de most csak alert-tel mutatjuk
+              console.log('JSON Export:', jsonString);
+              Alert.alert('JSON', jsonString.substring(0, 500) + '...');
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      Alert.alert('Hiba', 'Nem sikerült exportálni a JSON-t');
+    }
+  };
+
   // Add new product to database
   const addNewProduct = async () => {
     if (!user) {
@@ -978,12 +1148,21 @@ const ShoppingScreen: React.FC = () => {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Bevásárlás</Text>
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => setIsCreateModalVisible(true)}
-          >
-            <Ionicons name="add" size={24} color="white" />
-          </TouchableOpacity>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity
+              style={styles.receiptButton}
+              onPress={handleReceiptScan}
+            >
+              <Ionicons name="camera" size={20} color="white" />
+              <Text style={styles.receiptButtonText}>Blokk</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={() => setIsCreateModalVisible(true)}
+            >
+              <Ionicons name="add" size={24} color="white" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView 
@@ -1488,6 +1667,95 @@ const ShoppingScreen: React.FC = () => {
           </View>
         </Modal>
 
+        {/* Receipt Scanner Modal */}
+        <Modal
+          visible={isReceiptScanModalVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => {
+            setIsReceiptScanModalVisible(false);
+            setScannedReceiptData(null);
+          }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Blokk feldolgozás</Text>
+                <TouchableOpacity onPress={() => {
+                  setIsReceiptScanModalVisible(false);
+                  setScannedReceiptData(null);
+                }}>
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              {isProcessingReceipt ? (
+                <View style={styles.processingContainer}>
+                  <ActivityIndicator size="large" color="#14B8A6" />
+                  <Text style={styles.processingText}>Blokk feldolgozása...</Text>
+                  <Text style={styles.processingSubtext}>Ez néhány másodpercig tarthat</Text>
+                </View>
+              ) : scannedReceiptData ? (
+                <ScrollView style={styles.receiptDataContainer}>
+                  <View style={styles.receiptInfo}>
+                    <Text style={styles.receiptTitle}>Felismert adatok:</Text>
+                    {scannedReceiptData.store && (
+                      <Text style={styles.receiptDetail}>Bolt: {scannedReceiptData.store}</Text>
+                    )}
+                    {scannedReceiptData.date && (
+                      <Text style={styles.receiptDetail}>Dátum: {scannedReceiptData.date}</Text>
+                    )}
+                    <Text style={styles.receiptDetail}>
+                      Összeg: {scannedReceiptData.total.toLocaleString()} Ft
+                    </Text>
+                    <Text style={styles.receiptDetail}>
+                      Termékek: {scannedReceiptData.items.length} db
+                    </Text>
+                  </View>
+
+                  <View style={styles.itemsList}>
+                    <Text style={styles.itemsTitle}>Termékek:</Text>
+                    {scannedReceiptData.items.map((item, index) => (
+                      <View key={item.id} style={styles.receiptItem}>
+                        <Text style={styles.receiptItemName}>{item.name}</Text>
+                        <Text style={styles.receiptItemDetails}>
+                          {item.quantity} {item.unit} × {item.price.toLocaleString()} Ft
+                        </Text>
+                        <Text style={styles.receiptItemCategory}>{item.category}</Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  <View style={styles.receiptActions}>
+                    <TouchableOpacity
+                      style={styles.jsonExportButton}
+                      onPress={exportReceiptToJSON}
+                    >
+                      <Ionicons name="download" size={20} color="#14B8A6" />
+                      <Text style={styles.jsonExportButtonText}>JSON Export</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={styles.importButton}
+                      onPress={importReceiptToShoppingList}
+                      disabled={isProcessingReceipt}
+                    >
+                      <Ionicons name="basket" size={20} color="white" />
+                      <Text style={styles.importButtonText}>
+                        Importálás listába
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              ) : (
+                <View style={styles.noDataContainer}>
+                  <Text style={styles.noDataText}>Nincs feldolgozott adat</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        </Modal>
+
         {/* JSON Import Modal */}
         <Modal
           visible={isJsonImportModalVisible}
@@ -1811,6 +2079,25 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 20,
     padding: 8,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  receiptButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  receiptButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
   },
   scrollView: {
     flex: 1,
@@ -2661,6 +2948,122 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#14B8A6',
     fontWeight: '600',
+  },
+  // Receipt Scanner Styles
+  processingContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  processingText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    marginTop: 16,
+  },
+  processingSubtext: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 8,
+  },
+  receiptDataContainer: {
+    maxHeight: 400,
+  },
+  receiptInfo: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  receiptTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 12,
+  },
+  receiptDetail: {
+    fontSize: 16,
+    color: '#555',
+    marginBottom: 6,
+  },
+  itemsList: {
+    marginBottom: 20,
+  },
+  itemsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+  },
+  receiptItem: {
+    backgroundColor: 'white',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#14B8A6',
+  },
+  receiptItemName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  receiptItemDetails: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 2,
+  },
+  receiptItemCategory: {
+    fontSize: 12,
+    color: '#14B8A6',
+    fontWeight: '500',
+  },
+  receiptActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  jsonExportButton: {
+    flex: 1,
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#14B8A6',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  jsonExportButtonText: {
+    color: '#14B8A6',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  importButton: {
+    flex: 2,
+    backgroundColor: '#14B8A6',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  importButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  noDataContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  noDataText: {
+    fontSize: 16,
+    color: '#666',
   },
 });
 
