@@ -59,12 +59,10 @@ interface IncomePlan {
 interface SavedCalculation {
   id: string;
   family_member_id: string;
-  name?: string;
   alapber: number;
   ledolgozott_napok: number;
   brutto_ber: number;
   netto_ber: number;
-  total_monthly_income?: number;
   created_at: string;
   additional_incomes?: string;
 }
@@ -766,7 +764,6 @@ const BudgetScreen: React.FC = () => {
       // 1. Bérkalkuláció mentése
       const calculationData = {
         family_member_id: familyMember,
-        name: calculationName,
         alapber,
         ledolgozott_napok: ledolgozottNapok,
         ledolgozott_orak: ledolgozottOrak,
@@ -787,7 +784,6 @@ const BudgetScreen: React.FC = () => {
         szoc_hozzajarulas: eredmény.szocHozzjarulas,
         teljes_munkaltaroi_koltseg: eredmény.teljesMunkaltaroiKoltseg,
         additional_incomes: JSON.stringify(additionalIncomes),
-        total_monthly_income: totalMonthlyIncome,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -809,7 +805,7 @@ const BudgetScreen: React.FC = () => {
         name: calculationName,
         description: `Bérkalkuláció alapján: ${formatCurrency(eredmény.netto)} nettó bér + ${formatCurrency(additionalIncomes.reduce((sum, income) => sum + income.amount, 0))} egyéb jövedelem`,
         total_income: totalMonthlyIncome,
-        salary_calculation_id: null, // A kalkuláció ID-ja ha szükséges
+        calculation_name: calculationName, // Külön mező a kalkuláció nevének
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -898,13 +894,13 @@ const BudgetScreen: React.FC = () => {
                 return;
               }
 
-              // Ha volt név a kalkulációnak, akkor keressük meg és töröljük a kapcsolódó income plan-t is
-              if (calculation?.name && user) {
+              // A kapcsolódó income plan-t a calculationName alapján töröljük
+              if (calculationName && user) {
                 const { error: incomeError } = await supabase
                   .from('income_plans')
                   .delete()
                   .eq('user_id', user.id)
-                  .eq('name', calculation.name);
+                  .eq('calculation_name', calculationName);
 
                 if (incomeError) {
                   console.warn('Error deleting related income plan:', incomeError);
@@ -944,12 +940,7 @@ const BudgetScreen: React.FC = () => {
       }
     }
     
-    // Ha van total_monthly_income, akkor frissítjük az expectedIncome-ot
-    if (calculation.total_monthly_income) {
-      setExpectedIncome(calculation.total_monthly_income);
-    }
-    
-    Alert.alert('Kalkuláció betöltve', 'A kalkuláció adatai betöltésre kerültek. Az elvárható bevétel is frissítésre került.');
+    Alert.alert('Kalkuláció betöltve', 'A kalkuláció adatai betöltésre kerültek. Módosítsd az értékeket és mentsd el újra.');
   };
 
   // Pull to refresh
@@ -1328,7 +1319,7 @@ const BudgetScreen: React.FC = () => {
               <View style={styles.calculationHeader}>
                 <View style={styles.calculationTitleContainer}>
                   <Text style={styles.calculationName}>
-                    {calc.name || `${users.find(u => u.id === calc.family_member_id)?.user_metadata?.full_name || 'Ismeretlen'} - ${new Date(calc.created_at).toLocaleDateString('hu-HU', { month: 'long' })}`}
+                    {`${users.find(u => u.id === calc.family_member_id)?.user_metadata?.full_name || 'Ismeretlen'} - ${new Date(calc.created_at).toLocaleDateString('hu-HU', { month: 'long' })}`}
                   </Text>
                   <Text style={styles.calculationDate}>
                     {new Date(calc.created_at).toLocaleDateString('hu-HU')}
@@ -1367,12 +1358,6 @@ const BudgetScreen: React.FC = () => {
                   <Text style={styles.calculationDetailLabel}>Nettó bér:</Text>
                   <Text style={[styles.calculationDetailValue, styles.greenText]}>{calc.netto_ber.toLocaleString()} Ft</Text>
                 </View>
-                {calc.total_monthly_income && (
-                  <View style={styles.calculationDetailRow}>
-                    <Text style={styles.calculationDetailLabel}>Teljes havi jövedelem:</Text>
-                    <Text style={[styles.calculationDetailValue, styles.blueText]}>{calc.total_monthly_income.toLocaleString()} Ft</Text>
-                  </View>
-                )}
               </View>
             </View>
           ))
