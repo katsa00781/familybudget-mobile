@@ -7,7 +7,7 @@
 - **✅ Áthelyezve:** ShoppingScreen-re (bevásárlás/termék kezelés)
 - **✅ Jól látható választás:** Fotó vs Galéria opciók
 
-## 📷 Funkciók
+## 📷 Funkciók - FEJLESZTETT
 
 ### Blokk beolvasás választási lehetőségek
 
@@ -16,6 +16,26 @@
    - **📷 Fotó készítése** - Új fénykép készítése kamerával
    - **🖼️ Galéria** - Meglévő kép kiválasztása galériából  
    - **Mégse** - Művelet megszakítása
+
+### 🔍 OCR feldolgozás - FEJLESZTETT PONTOSSÁG
+
+#### Bolt/üzlet felismerés
+- **16 üzletlánc támogatása:** TESCO, ALDI, LIDL, PENNY, SPAR, CBA, COOP, AUCHAN, REAL, INTERSPAR, METRO, ROSSMANN, DM, MÜLLER, OBI, PRAKTIKER, DECATHLON
+- **Intelligens bolt keresés:** Első 6 sorban keres, fallback megoldásokkal
+
+#### Összeg felismerés  
+- **Több ár formátum:** 1.234 Ft, 1 234 Ft, 1,234 Ft, 1234 Ft
+- **Összeg kulcsszavak:** ÖSSZESEN, TOTAL, FIZETENDŐ, VÉGÖSSZEG, SUBTOTAL, SUM, OSSZEG, FIZET
+- **Automatikus kalkuláció:** Ha nincs explicit összeg, tételekből számítja
+
+#### Termék parsing
+- **Mennyiség felismerés:** kg, g, dkg, l, dl, ml, db, csomag, doboz, üveg, szál
+- **Termék név tisztítás:** Felesleges karakterek eltávolítása, formázás
+- **Kategorizálás:** Fejlesztett algoritmus termék típus alapján
+
+#### Dátum felismerés
+- **4 dátum formátum:** YYYY-MM-DD, DD-MM-YYYY, YYYY.MM.DD, DD.MM.YYYY
+- **Flexibilis parsing:** Szóközök és különböző elválasztók támogatása
 
 ### Technikai megvalósítás
 

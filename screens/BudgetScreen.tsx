@@ -115,20 +115,20 @@ interface SalaryResult {
   munkaltaroiTerhek: string;
 }
 
-// 2025-ös bérszámítási kulcsok
+// 2025-ös bérszámítási kulcsok - frissített értékek
 const KULCSOK = {
-  SZOCIALIS_HOZZAJARULAS: 0.135, // 13.5%
-  TB_JARULÉK: 0.185, // 18.5%
-  NYUGDIJJARULÉK: 0.10, // 10%
-  SZJA_KULCS: 0.15, // 15%
-  ÖNKÉNTES_NYUGDIJ: 0.02, // 2%
-  MUSZAKPOTLEK: 0.45, // 45%
-  TULORA_POTLEK: 1.0, // 100%
-  UNNEPNAPI_SZORZO: 2.0, // 200%
+  SZOCIALIS_HOZZAJARULAS: 0.135, // 13.5% (munkáltatói teher)
+  TB_JARULÉK: 0.185, // 18.5% (munkavállalói járulék)
+  NYUGDIJJARULÉK: 0.10, // 10% (500.000 Ft felett)
+  SZJA_KULCS: 0.15, // 15% (egységes kulcs)
+  ÖNKÉNTES_NYUGDIJ: 0.015, // 1.5% (dolgozói befizetés, adóalapot csökkenti)
+  MUSZAKPOTLEK: 0.45, // 45% (műszakpótlék - túlórára is vonatkozik)
+  TULORA_POTLEK: 0.00, // 0% (túlóra = 100% alapbér, pótlék csak műszakban)
+  UNNEPNAPI_SZORZO: 1.0, // 100% (200%-hoz 100% hozzáadás)
   BETEGSZABADSAG_SZAZALEK: 0.70, // 70%
-  GYED_NAPI: 13570, // GYED napi összeg
-  KIKULDETESI_POTLEK: 6710,
-  ERDEKKÉPVISELETI_TAGDIJ_SZAZALEK: 0.008 // 0.8%
+  GYED_NAPI: 13570, // GYED napi összeg 2025
+  KIKULDETESI_POTLEK: 6710, // Kiküldetési pótlék
+  ERDEKKÉPVISELETI_TAGDIJ_SZAZALEK: 0.007 // 0.7% (adóalapot csökkenti)
 };
 
 // Helper function to generate unique IDs
@@ -760,12 +760,12 @@ const BudgetScreen: React.FC = () => {
     const haviberesIdober = Math.round(ledolgozottOrak * oraber);
     const fizetettSzabadsag = Math.round(szabadsagOrak * oraber);
     
-    // Túlóra számítás
+    // Túlóra számítás - 100% alapbér
     const tuloraAlapossszeg = Math.round(tuloraOrak * oraber);
-    const tuloraPotlek = Math.round(tuloraOrak * oraber * KULCSOK.TULORA_POTLEK);
+    const tuloraPotlek = Math.round(tuloraOrak * oraber * KULCSOK.TULORA_POTLEK); // 0% pótlék
     
     const muszakpotlek = Math.round(muszakpotlekOrak * oraber * KULCSOK.MUSZAKPOTLEK);
-    const tuloraMuszakpotlek = Math.round(tuloraOrak * oraber * KULCSOK.MUSZAKPOTLEK);
+    const tuloraMuszakpotlek = Math.round(tuloraOrak * oraber * KULCSOK.MUSZAKPOTLEK); // 45% műszakpótlék túlórára
     const unnepnapiMunka = Math.round(unnepnapiOrak * oraber * KULCSOK.UNNEPNAPI_SZORZO);
     const betegszabadsag = Math.round(betegszabadsagNapok * (oraber * 8) * KULCSOK.BETEGSZABADSAG_SZAZALEK);
     const kikuldetesTobblet = Math.round(kikuldetesNapok * KULCSOK.KIKULDETESI_POTLEK);
@@ -779,27 +779,31 @@ const BudgetScreen: React.FC = () => {
     // Összes járandóság
     const osszesJarandsag = bruttoBer + gyedMunkavMellett + formaruhakompenzacio;
     
-    // TB járulék számítás
+    // TB járulék számítás - 18.5% bruttó bérből (maximálisan 1.200.000 Ft-ig)
     const tbJarulékAlap = Math.min(bruttoBer, 1200000);
     const tbJarulék = Math.round(tbJarulékAlap * KULCSOK.TB_JARULÉK);
     
-    // Nyugdíjjárulék
-    const nyugdijJarulék = bruttoBer > 500000 ? Math.round(bruttoBer * KULCSOK.NYUGDIJJARULÉK) : 0;
+    // Nyugdíjjárulék - 10% csak 500.000 Ft feletti bér esetén
+    const nyugdijJarulék = bruttoBer > 500000 ? Math.round((bruttoBer - 500000) * KULCSOK.NYUGDIJJARULÉK) : 0;
     
-    // Önkéntes nyugdíjpénztári befizetés
+    // Önkéntes nyugdíjpénztári befizetés - 1.5% (adóalapot csökkenti)
     const onkentesNyugdij = Math.round(bruttoBer * KULCSOK.ÖNKÉNTES_NYUGDIJ);
     
-    // Érdekképviseleti tagdíj
+    // Érdekképviseleti tagdíj - 0.7% (adóalapot csökkenti)
     const erdekKepvTagdij = Math.round(bruttoBer * KULCSOK.ERDEKKÉPVISELETI_TAGDIJ_SZAZALEK);
     
-    // SZJA alap
+    // SZJA alap = bruttó bér + formaruhakomp. - TB járulék - nyugdíjjárulék - önkéntes nyugdíj
     const szjaAlap = bruttoBer + formaruhakompenzacio - tbJarulék - nyugdijJarulék - onkentesNyugdij;
     
     // Családi adókedvezmény alkalmazása
     const kedvezményesAlap = Math.max(0, szjaAlap - családiAdókedvezmény);
     
-    // SZJA számítás
-    const szja = Math.round(kedvezményesAlap * KULCSOK.SZJA_KULCS);
+    // SZJA számítás - 15% az SZJA alapból
+    const szjaBrutto = Math.round(kedvezményesAlap * KULCSOK.SZJA_KULCS);
+    
+    // Általános adókedvezmény levonása (2025-ben minimum 10.000 Ft)
+    const altalnosAdoKedvezmeny = 10000;
+    const szja = Math.max(0, szjaBrutto - altalnosAdoKedvezmeny);
     
     // Összes levonás
     const osszesLevonas = tbJarulék + nyugdijJarulék + onkentesNyugdij + szja + erdekKepvTagdij;

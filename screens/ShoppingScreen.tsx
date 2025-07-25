@@ -823,7 +823,7 @@ const ShoppingScreen: React.FC = () => {
       });
 
       if (!result.canceled && result.assets[0]) {
-        await processReceiptWithOCR(result.assets[0].uri);
+        await handleReceiptProcessing(result.assets[0].uri);
       }
     } catch (error) {
       console.error('Kamera hiba:', error);
@@ -851,7 +851,7 @@ const ShoppingScreen: React.FC = () => {
       });
 
       if (!result.canceled && result.assets[0]) {
-        await processReceiptWithOCR(result.assets[0].uri);
+        await handleReceiptProcessing(result.assets[0].uri);
       }
     } catch (error) {
       console.error('Galéria hiba:', error);
@@ -860,13 +860,32 @@ const ShoppingScreen: React.FC = () => {
   };
 
   // OCR feldolgozás közös funkció
-  const processReceiptWithOCR = async (imageUri: string) => {
+  const handleReceiptProcessing = async (imageUri: string) => {
     setIsProcessingReceipt(true);
     setIsReceiptScanModalVisible(true);
     
     try {
+      console.log('🔍 OCR feldolgozás indítása:', imageUri);
+      
       // OCR feldolgozás
-      const receiptData = await processReceiptImage(imageUri);
+      const receiptData: ReceiptData = await processReceiptImage(imageUri);
+      
+      console.log('📊 OCR eredmény:', {
+        itemsCount: receiptData?.items?.length,
+        total: receiptData?.total,
+        store: receiptData?.store,
+        hasItems: !!receiptData?.items
+      });
+      
+      // Ellenőrizzük, hogy van-e válasz és megfelelő struktúrájú-e
+      if (!receiptData || !receiptData.items) {
+        throw new Error('OCR feldolgozás sikertelen: Érvénytelen adatstruktúra');
+      }
+      
+      if (receiptData.items.length === 0) {
+        throw new Error('OCR feldolgozás sikertelen: Nincsenek felismert termékek');
+      }
+      
       setScannedReceiptData(receiptData);
       
       Alert.alert(
@@ -890,8 +909,8 @@ const ShoppingScreen: React.FC = () => {
         ]
       );
     } catch (error) {
-      console.error('OCR hiba:', error);
-      Alert.alert('Hiba', 'Nem sikerült feldolgozni a blokk képét. Próbáld újra jobb megvilágítással!');
+      console.error('❌ OCR hiba:', error);
+      Alert.alert('Hiba', `Nem sikerült feldolgozni a blokk képét: ${error instanceof Error ? error.message : 'Ismeretlen hiba'}. Próbáld újra jobb megvilágítással!`);
       setIsReceiptScanModalVisible(false);
     } finally {
       setIsProcessingReceipt(false);
@@ -900,10 +919,15 @@ const ShoppingScreen: React.FC = () => {
 
   // Blokk adatok importálása bevásárlólistába
   const importReceiptToShoppingList = async () => {
-    if (!scannedReceiptData || !user) return;
+    if (!scannedReceiptData || !user) {
+      console.log('❌ Import hiba: scannedReceiptData vagy user hiányzik');
+      Alert.alert('Hiba', 'Nincs beolvasott adat vagy nincs bejelentkezve!');
+      return;
+    }
 
     try {
       setIsProcessingReceipt(true);
+      console.log('📝 Blokk import kezdése...', scannedReceiptData);
 
       // Új bevásárlólista létrehozása
       const listName = `Blokk import - ${scannedReceiptData.store || 'Ismeretlen bolt'}`;
@@ -930,6 +954,14 @@ const ShoppingScreen: React.FC = () => {
         created_at: new Date().toISOString(),
       };
 
+      console.log('💾 Mentés adatbázisba:', {
+        id: newList.id,
+        user_id: newList.user_id,
+        name: newList.name,
+        itemsCount: newList.items.length,
+        total_amount: newList.total_amount
+      });
+
       // Mentés adatbázisba
       const { error } = await supabase
         .from('shopping_lists')
@@ -945,10 +977,12 @@ const ShoppingScreen: React.FC = () => {
         }]);
 
       if (error) {
-        console.error('Hiba a bevásárlólista mentésekor:', error);
-        Alert.alert('Hiba', 'Nem sikerült elmenteni a bevásárlólistát');
+        console.error('❌ Hiba a bevásárlólista mentésekor:', error);
+        Alert.alert('Hiba', `Nem sikerült elmenteni a bevásárlólistát: ${error.message}`);
         return;
       }
+
+      console.log('✅ Bevásárlólista sikeresen mentve');
 
       // UI frissítése
       setShoppingLists(prev => [newList, ...prev]);
@@ -1206,13 +1240,6 @@ const ShoppingScreen: React.FC = () => {
           <Text style={styles.headerTitle}>Bevásárlás</Text>
           <View style={styles.headerButtons}>
             <TouchableOpacity
-              style={styles.receiptButton}
-              onPress={handleReceiptScan}
-            >
-              <Ionicons name="camera" size={20} color="white" />
-              <Text style={styles.receiptButtonText}>Blokk</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
               style={styles.addButton}
               onPress={() => setIsCreateModalVisible(true)}
             >
@@ -1264,6 +1291,15 @@ const ShoppingScreen: React.FC = () => {
                 <Ionicons name="add-circle" size={24} color="#14B8A6" />
                 <Text style={styles.productManagementButtonText}>Új termék</Text>
                 <Text style={styles.productManagementButtonSubtext}>Kézi hozzáadás</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.productManagementButton}
+                onPress={handleReceiptScan}
+              >
+                <Ionicons name="camera" size={24} color="#14B8A6" />
+                <Text style={styles.productManagementButtonText}>Nyugta szkennelés</Text>
+                <Text style={styles.productManagementButtonSubtext}>Automatikus felismerés</Text>
               </TouchableOpacity>
               
               <TouchableOpacity
@@ -2141,20 +2177,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  receiptButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  receiptButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-  },
   scrollView: {
     flex: 1,
   },
@@ -2170,6 +2192,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: 'white',
     marginBottom: 12,
+    textAlign: 'center',
   },
   storeGrid: {
     flexDirection: 'row',
@@ -2333,6 +2356,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
+    textAlign: 'center',
   },
   input: {
     borderWidth: 1,
@@ -2928,6 +2952,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255, 255, 255, 0.8)',
     marginBottom: 16,
+    textAlign: 'center',
   },
   productManagementButtons: {
     flexDirection: 'row',
@@ -2946,11 +2971,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginTop: 8,
+    textAlign: 'center',
   },
   productManagementButtonSubtext: {
     color: 'rgba(255, 255, 255, 0.8)',
     fontSize: 12,
     marginTop: 4,
+    textAlign: 'center',
   },
   jsonModalContent: {
     backgroundColor: 'white',

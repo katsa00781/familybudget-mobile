@@ -12,6 +12,7 @@ import HomeScreen from '../screens/HomeScreen';
 import BudgetScreen from '../screens/BudgetScreen';
 import SavingsScreen from '../screens/SavingsScreen';
 import ShoppingScreen from '../screens/ShoppingScreen';
+import StatisticsScreen from '../screens/StatisticsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import FamilyMembersScreen from '../screens/FamilyMembersScreen';
 
@@ -55,6 +56,8 @@ function MainTabs() {
             iconName = focused ? 'calculator' : 'calculator-outline';
           } else if (route.name === 'Bevásárlólista') {
             iconName = focused ? 'basket' : 'basket-outline';
+          } else if (route.name === 'Statisztikák') {
+            iconName = focused ? 'bar-chart' : 'bar-chart-outline';
           } else if (route.name === 'Megtakarítások') {
             iconName = focused ? 'wallet' : 'wallet-outline';
           } else if (route.name === 'Profil') {
@@ -99,6 +102,14 @@ function MainTabs() {
         options={{
           tabBarLabel: 'Bevásárlás',
           headerTitle: 'Bevásárlólisták',
+        }}
+      />
+      <Tab.Screen 
+        name="Statisztikák" 
+        component={StatisticsScreen}
+        options={{
+          tabBarLabel: 'Statisztikák',
+          headerTitle: 'Statisztikák',
         }}
       />
       <Tab.Screen 
