@@ -9,7 +9,8 @@ Modern React Native mobilalkalmazás a családi költségvetés kezelésére és
 - 🎯 **Megtakarítási célok**: Célok beállítása és előrehaladás követése
 - 📊 **Pénzügyi áttekintés**: Egyenleg és statisztikák megjelenítése
 - 🛒 **Bevásárlólisták**: Vásárlási tervezés és költség becslés
-- 📈 **Tranzakciók**: Részletes pénzügyi tranzakció történet
+- � **OCR Receipt Scanner**: Blokkok fényképezése és automatikus termék felismerés
+- �📈 **Tranzakciók**: Részletes pénzügyi tranzakció történet  
 - 🎨 **Modern UI**: Tiszta, intuitív felhasználói felület magyar nyelven
 
 ## 🚀 Gyors indítás

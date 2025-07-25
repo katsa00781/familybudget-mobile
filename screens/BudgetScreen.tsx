@@ -16,8 +16,10 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { processReceiptImage, exportToJSON, ReceiptData } from '../lib/receiptOCR';
 
 interface BudgetItem {
   id: string;
@@ -237,6 +239,12 @@ const BudgetScreen: React.FC = () => {
   const [isEditCalculationModalVisible, setIsEditCalculationModalVisible] = useState(false);
   const [isSaveCalculationModalVisible, setIsSaveCalculationModalVisible] = useState(false);
   const [calculationName, setCalculationName] = useState('');
+
+  // OCR Receipt Scanner állapotok
+  const [isReceiptScannerVisible, setIsReceiptScannerVisible] = useState(false);
+  const [isProcessingReceipt, setIsProcessingReceipt] = useState(false);
+  const [receiptImage, setReceiptImage] = useState<string | null>(null);
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
 
   // Számított értékek
   const ledolgozottOrak = ledolgozottNapok * 8.1;
@@ -602,6 +610,144 @@ const BudgetScreen: React.FC = () => {
         },
       ]
     );
+  };
+
+  // OCR RECEIPT SCANNER FÜGGVÉNYEK
+
+  // Kamera engedély ellenőrzése és kép készítése
+  const handleReceiptScan = async () => {
+    try {
+      // Kamera engedély kérése
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert(
+          'Engedély szükséges',
+          'A receipt scanner használatához engedélyezned kell a kamera hozzáférést.',
+          [
+            { text: 'Mégse', style: 'cancel' },
+            { text: 'Beállítások', onPress: () => {} }
+          ]
+        );
+        return;
+      }
+
+      // Kép készítése
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+        base64: false,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const imageUri = result.assets[0].uri;
+        setReceiptImage(imageUri);
+        setIsReceiptScannerVisible(true);
+        
+        // OCR feldolgozás indítása
+        await processReceiptWithOCR(imageUri);
+      }
+    } catch (error) {
+      console.error('Hiba a receipt scan során:', error);
+      Alert.alert('Hiba', 'Nem sikerült elkészíteni a képet');
+    }
+  };
+
+  // OCR feldolgozás
+  const processReceiptWithOCR = async (imageUri: string) => {
+    try {
+      setIsProcessingReceipt(true);
+      
+      // OCR feldolgozás
+      const result = await processReceiptImage(imageUri);
+      setReceiptData(result);
+      
+      Alert.alert(
+        'Receipt feldolgozva!',
+        `${result.items.length} termék felismerve. Összeg: ${result.total.toLocaleString()} Ft\n\nHozzáadod a költségvetéshez?`,
+        [
+          { text: 'Mégse', style: 'cancel' },
+          { text: 'Hozzáad', onPress: () => importReceiptToBudget(result) }
+        ]
+      );
+      
+    } catch (error) {
+      console.error('OCR hiba:', error);
+      Alert.alert('Hiba', 'Nem sikerült feldolgozni a receipt képet');
+    } finally {
+      setIsProcessingReceipt(false);
+    }
+  };
+
+  // Receipt adatok importálása a költségvetésbe
+  const importReceiptToBudget = (receiptData: ReceiptData) => {
+    try {
+      const newBudgetData = [...budgetData];
+      
+      // Minden termék hozzáadása a megfelelő kategóriához
+      receiptData.items.forEach(item => {
+        // Keressük meg a megfelelő kategóriát
+        let categoryIndex = newBudgetData.findIndex(cat => cat.name === item.category);
+        
+        // Ha nincs ilyen kategória, hozzuk létre
+        if (categoryIndex === -1) {
+          newBudgetData.push({
+            name: item.category,
+            items: []
+          });
+          categoryIndex = newBudgetData.length - 1;
+        }
+        
+        // Új budget item létrehozása
+        const newBudgetItem: BudgetItem = {
+          id: generateId(),
+          category: item.category,
+          type: 'Szükséglet', // Alapértelmezetten szükséglet
+          subcategory: item.name,
+          amount: item.price * item.quantity
+        };
+        
+        newBudgetData[categoryIndex].items.push(newBudgetItem);
+      });
+      
+      setBudgetData(newBudgetData);
+      setIsReceiptScannerVisible(false);
+      setReceiptImage(null);
+      setReceiptData(null);
+      
+      Alert.alert('Siker', 'A receipt termékei sikeresen hozzáadva a költségvetéshez!');
+      
+    } catch (error) {
+      console.error('Hiba a receipt import során:', error);
+      Alert.alert('Hiba', 'Nem sikerült importálni a receipt adatokat');
+    }
+  };
+
+  // Receipt JSON export
+  const exportReceiptAsJSON = () => {
+    if (!receiptData) return;
+    
+    try {
+      const jsonString = exportToJSON(receiptData);
+      
+      Alert.alert(
+        'JSON Export',
+        'Receipt adatok JSON formátumban:\n\n' + jsonString.substring(0, 200) + '...',
+        [
+          { text: 'Bezár', style: 'cancel' },
+          { text: 'Megosztás', onPress: () => {
+            // Itt lehetne megosztási funkciót implementálni
+            console.log('JSON Export:', jsonString);
+          }}
+        ]
+      );
+      
+    } catch (error) {
+      console.error('JSON export hiba:', error);
+      Alert.alert('Hiba', 'Nem sikerült exportálni a JSON adatokat');
+    }
   };
 
   // BÉRKALKULÁTOR FÜGGVÉNYEK
@@ -1429,6 +1575,12 @@ const BudgetScreen: React.FC = () => {
             {activeTab === 'budget' ? (
               <>
                 <TouchableOpacity
+                  style={styles.cameraButton}
+                  onPress={handleReceiptScan}
+                >
+                  <Ionicons name="camera" size={20} color="white" />
+                </TouchableOpacity>
+                <TouchableOpacity
                   style={styles.newBudgetButton}
                   onPress={() => createNewBudget()}
                 >
@@ -1841,6 +1993,120 @@ const BudgetScreen: React.FC = () => {
             </View>
           </View>
         </Modal>
+
+        {/* OCR Receipt Scanner Modal */}
+        <Modal
+          visible={isReceiptScannerVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => {
+            setIsReceiptScannerVisible(false);
+            setReceiptImage(null);
+            setReceiptData(null);
+          }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, styles.receiptModalContent]}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Receipt Scanner</Text>
+                <TouchableOpacity 
+                  onPress={() => {
+                    setIsReceiptScannerVisible(false);
+                    setReceiptImage(null);
+                    setReceiptData(null);
+                  }}
+                >
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView style={styles.receiptModalBody}>
+                {receiptImage && (
+                  <View style={styles.receiptImageContainer}>
+                    <Text style={styles.receiptImageTitle}>Elkészített kép:</Text>
+                    <View style={styles.receiptImagePlaceholder}>
+                      <Ionicons name="image" size={64} color="#9CA3AF" />
+                      <Text style={styles.receiptImagePath}>
+                        {receiptImage.split('/').pop()}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {isProcessingReceipt && (
+                  <View style={styles.processingContainer}>
+                    <ActivityIndicator size="large" color="#14B8A6" />
+                    <Text style={styles.processingText}>Receipt feldolgozása...</Text>
+                    <Text style={styles.processingSubtext}>
+                      A kép elemzése és a termékek felismerése folyamatban
+                    </Text>
+                  </View>
+                )}
+
+                {receiptData && !isProcessingReceipt && (
+                  <View style={styles.receiptResultsContainer}>
+                    <Text style={styles.receiptResultsTitle}>
+                      Felismert termékek ({receiptData.items.length} db):
+                    </Text>
+                    
+                    {receiptData.store && (
+                      <View style={styles.receiptStoreInfo}>
+                        <Ionicons name="storefront" size={16} color="#14B8A6" />
+                        <Text style={styles.receiptStoreText}>{receiptData.store}</Text>
+                      </View>
+                    )}
+
+                    <View style={styles.receiptItemsList}>
+                      {receiptData.items.map((item, index) => (
+                        <View key={index} style={styles.receiptItem}>
+                          <View style={styles.receiptItemInfo}>
+                            <Text style={styles.receiptItemName}>{item.name}</Text>
+                            <Text style={styles.receiptItemCategory}>{item.category}</Text>
+                          </View>
+                          <View style={styles.receiptItemPrice}>
+                            <Text style={styles.receiptItemQuantity}>
+                              {item.quantity} {item.unit}
+                            </Text>
+                            <Text style={styles.receiptItemAmount}>
+                              {(item.price * item.quantity).toLocaleString()} Ft
+                            </Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+
+                    <View style={styles.receiptTotalContainer}>
+                      <Text style={styles.receiptTotalLabel}>Összesen:</Text>
+                      <Text style={styles.receiptTotalAmount}>
+                        {receiptData.total.toLocaleString()} Ft
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </ScrollView>
+
+              {receiptData && !isProcessingReceipt && (
+                <View style={styles.receiptModalActions}>
+                  <TouchableOpacity
+                    style={styles.receiptExportButton}
+                    onPress={exportReceiptAsJSON}
+                  >
+                    <Ionicons name="download" size={16} color="#6366F1" />
+                    <Text style={styles.receiptExportText}>JSON Export</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.receiptImportButton}
+                    onPress={() => importReceiptToBudget(receiptData)}
+                  >
+                    <Ionicons name="add" size={16} color="white" />
+                    <Text style={styles.receiptImportText}>Költségvetéshez ad</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -1879,6 +2145,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 20,
     padding: 8,
+  },
+  cameraButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 20,
+    padding: 8,
+    marginRight: 4,
   },
   headerButtons: {
     flexDirection: 'row',
@@ -2738,6 +3010,175 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#10B981',
     fontStyle: 'italic',
+  },
+  
+  // OCR Receipt Scanner Styles
+  receiptModalContent: {
+    maxHeight: '90%',
+  },
+  receiptModalBody: {
+    maxHeight: 400,
+  },
+  receiptImageContainer: {
+    marginBottom: 20,
+  },
+  receiptImageTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 8,
+  },
+  receiptImagePlaceholder: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    padding: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderStyle: 'dashed',
+  },
+  receiptImagePath: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  processingContainer: {
+    alignItems: 'center',
+    padding: 30,
+  },
+  processingText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginTop: 16,
+  },
+  processingSubtext: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  receiptResultsContainer: {
+    marginTop: 20,
+  },
+  receiptResultsTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 16,
+  },
+  receiptStoreInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    padding: 8,
+    borderRadius: 6,
+    marginBottom: 16,
+  },
+  receiptStoreText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#15803D',
+    marginLeft: 8,
+  },
+  receiptItemsList: {
+    marginBottom: 16,
+  },
+  receiptItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  receiptItemInfo: {
+    flex: 1,
+  },
+  receiptItemName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+  receiptItemCategory: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  receiptItemPrice: {
+    alignItems: 'flex-end',
+  },
+  receiptItemQuantity: {
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  receiptItemAmount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginTop: 2,
+  },
+  receiptTotalContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+  receiptTotalLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E40AF',
+  },
+  receiptTotalAmount: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1E40AF',
+  },
+  receiptModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    gap: 12,
+  },
+  receiptExportButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#6366F1',
+  },
+  receiptExportText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6366F1',
+    marginLeft: 4,
+  },
+  receiptImportButton: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#14B8A6',
+    padding: 12,
+    borderRadius: 8,
+  },
+  receiptImportText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'white',
+    marginLeft: 4,
   },
 });
 
