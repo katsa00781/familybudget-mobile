@@ -49,7 +49,7 @@ interface IncomePlan {
   name: string;
   description?: string;
   monthly_income: number;
-  additional_incomes: { id: string; name: string; amount: number }[];
+  additional_incomes: string; // JSON string
   total_income: number;
   created_at: string;
   updated_at?: string;
@@ -805,10 +805,8 @@ const BudgetScreen: React.FC = () => {
         name: calculationName,
         description: `Bérkalkuláció alapján: ${formatCurrency(eredmény.netto)} nettó bér + ${formatCurrency(additionalIncomes.reduce((sum, income) => sum + income.amount, 0))} egyéb jövedelem`,
         monthly_income: eredmény.netto, // Nettó bér
-        additional_incomes: additionalIncomes, // Egyéb jövedelmek
-        total_income: totalMonthlyIncome, // Teljes havi jövedelem
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        additional_incomes: JSON.stringify(additionalIncomes), // Egyéb jövedelmek JSON-ként
+        total_income: totalMonthlyIncome // Teljes havi jövedelem
       };
 
       const { error: incomeError } = await supabase
