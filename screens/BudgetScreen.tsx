@@ -950,7 +950,7 @@ const BudgetScreen: React.FC = () => {
         </View>
 
         {/* Budget Categories */}
-        <View style={styles.categoriesContainer}>
+        <View>
           {budgetData.map((category, categoryIndex) => (
             <View key={category.name} style={styles.categoryCard}>
               <View style={styles.categoryHeader}>
@@ -1829,6 +1829,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 20,
     marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   sectionTitle: {
     fontSize: 18,
@@ -1879,6 +1887,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
   categoryTitleRow: {
     flexDirection: 'row',
@@ -1888,7 +1899,7 @@ const styles = StyleSheet.create({
   categoryTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#1F2937',
   },
   categoryTotal: {
     fontSize: 16,
@@ -1922,9 +1933,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   itemName: {
-    fontSize: 14,
-    color: '#333',
+    fontSize: 15,
+    color: '#374151',
     fontWeight: '500',
+    flex: 1,
+    marginLeft: 8,
   },
   typeBadge: {
     paddingHorizontal: 8,
@@ -1942,9 +1955,10 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   itemAmountText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginRight: 8,
   },
   addItemButton: {
     flexDirection: 'row',
@@ -2190,10 +2204,19 @@ const styles = StyleSheet.create({
   
   // Categories styles
   categoryCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'white',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
+    marginBottom: 16,
+    marginHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   itemsContainer: {
     marginTop: 8,
@@ -2204,10 +2227,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'white',
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   itemRight: {
     flexDirection: 'row',
