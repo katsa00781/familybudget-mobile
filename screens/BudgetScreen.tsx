@@ -59,10 +59,12 @@ interface IncomePlan {
 interface SavedCalculation {
   id: string;
   family_member_id: string;
+  name?: string;
   alapber: number;
   ledolgozott_napok: number;
   brutto_ber: number;
   netto_ber: number;
+  total_monthly_income?: number;
   created_at: string;
   additional_incomes?: string;
 }
@@ -235,6 +237,8 @@ const BudgetScreen: React.FC = () => {
   const [newIncome, setNewIncome] = useState({ name: '', amount: 0 });
   const [editingCalculation, setEditingCalculation] = useState<SavedCalculation | null>(null);
   const [isEditCalculationModalVisible, setIsEditCalculationModalVisible] = useState(false);
+  const [isSaveCalculationModalVisible, setIsSaveCalculationModalVisible] = useState(false);
+  const [calculationName, setCalculationName] = useState('');
 
   // Számított értékek
   const ledolgozottOrak = ledolgozottNapok * 8.1;
@@ -728,16 +732,41 @@ const BudgetScreen: React.FC = () => {
     fetchSavedCalculations();
   }, [fetchSavedCalculations]);
 
-  // Bérszámítás mentése
+  // Bérszámítás mentése - modal megnyitása
   const handleSaveCalculation = async () => {
     if (!familyMember || !eredmény) {
       Alert.alert('Hiba', 'Kérjük válasszon családtagot és számítsa ki a bért!');
       return;
     }
 
+    // Default név generálása
+    const userName = users.find(u => u.id === familyMember)?.user_metadata?.full_name || 'Ismeretlen';
+    const currentDate = new Date().toLocaleDateString('hu-HU', { month: 'long', year: 'numeric' });
+    setCalculationName(`${userName} - ${currentDate}`);
+    setIsSaveCalculationModalVisible(true);
+  };
+
+  // Tényleges mentés végrehajtása
+  const saveCalculationWithName = async () => {
+    if (!calculationName.trim()) {
+      Alert.alert('Hiba', 'Kérjük adjon nevet a kalkulációnak!');
+      return;
+    }
+
+    if (!familyMember || !eredmény || !user) {
+      Alert.alert('Hiba', 'Hiányzó adatok!');
+      return;
+    }
+
     try {
+      setIsLoading(true);
+      
+      const totalMonthlyIncome = getTotalMonthlyIncome();
+      
+      // 1. Bérkalkuláció mentése
       const calculationData = {
         family_member_id: familyMember,
+        name: calculationName,
         alapber,
         ledolgozott_napok: ledolgozottNapok,
         ledolgozott_orak: ledolgozottOrak,
@@ -758,25 +787,57 @@ const BudgetScreen: React.FC = () => {
         szoc_hozzajarulas: eredmény.szocHozzjarulas,
         teljes_munkaltaroi_koltseg: eredmény.teljesMunkaltaroiKoltseg,
         additional_incomes: JSON.stringify(additionalIncomes),
+        total_monthly_income: totalMonthlyIncome,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
 
-      const { error } = await supabase
+      const { error: calcError } = await supabase
         .from('salary_calculations')
         .insert([calculationData])
         .select();
 
-      if (error) {
-        console.error('Error saving calculation:', error);
-        Alert.alert('Hiba', 'Hiba történt a mentés során: ' + error.message);
-      } else {
-        Alert.alert('Siker', 'Számítás sikeresen elmentve!');
-        fetchSavedCalculations();
+      if (calcError) {
+        console.error('Error saving calculation:', calcError);
+        Alert.alert('Hiba', 'Hiba történt a kalkuláció mentése során: ' + calcError.message);
+        return;
       }
+
+      // 2. Bevételi terv mentése/frissítése
+      const incomeData = {
+        user_id: user.id,
+        name: calculationName,
+        description: `Bérkalkuláció alapján: ${formatCurrency(eredmény.netto)} nettó bér + ${formatCurrency(additionalIncomes.reduce((sum, income) => sum + income.amount, 0))} egyéb jövedelem`,
+        total_income: totalMonthlyIncome,
+        salary_calculation_id: null, // A kalkuláció ID-ja ha szükséges
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const { error: incomeError } = await supabase
+        .from('income_plans')
+        .insert([incomeData])
+        .select();
+
+      if (incomeError) {
+        console.error('Error saving income plan:', incomeError);
+        // Ne dobjunk hibát, mert a kalkuláció már mentve van
+      }
+
+      // 3. Várható bevétel frissítése az aktuális komponensben
+      setExpectedIncome(totalMonthlyIncome);
+      
+      Alert.alert('Siker', 'Kalkuláció és havi jövedelem sikeresen elmentve!');
+      setIsSaveCalculationModalVisible(false);
+      setCalculationName('');
+      fetchSavedCalculations();
+      loadData(); // Frissíti a bevételi terveket is
+
     } catch (error) {
       console.error('Error:', error);
       Alert.alert('Hiba', 'Hiba történt a mentés során!');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -822,18 +883,38 @@ const BudgetScreen: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              const { error } = await supabase
+              // Először megkeressük a kalkulációt
+              const calculation = savedCalculations.find(calc => calc.id === calculationId);
+              
+              // Kalkuláció törlése
+              const { error: calcError } = await supabase
                 .from('salary_calculations')
                 .delete()
                 .eq('id', calculationId);
 
-              if (error) {
-                console.error('Error deleting calculation:', error);
+              if (calcError) {
+                console.error('Error deleting calculation:', calcError);
                 Alert.alert('Hiba', 'Nem sikerült törölni a kalkulációt');
-              } else {
-                Alert.alert('Siker', 'Kalkuláció sikeresen törölve!');
-                fetchSavedCalculations();
+                return;
               }
+
+              // Ha volt név a kalkulációnak, akkor keressük meg és töröljük a kapcsolódó income plan-t is
+              if (calculation?.name && user) {
+                const { error: incomeError } = await supabase
+                  .from('income_plans')
+                  .delete()
+                  .eq('user_id', user.id)
+                  .eq('name', calculation.name);
+
+                if (incomeError) {
+                  console.warn('Error deleting related income plan:', incomeError);
+                  // Ne dobjunk hibát, mert a fő kalkuláció már törölve van
+                }
+              }
+
+              Alert.alert('Siker', 'Kalkuláció sikeresen törölve!');
+              fetchSavedCalculations();
+              loadData(); // Frissíti a bevételi terveket is
             } catch (error) {
               console.error('Error:', error);
               Alert.alert('Hiba', 'Hiba történt a törlés során!');
@@ -863,7 +944,12 @@ const BudgetScreen: React.FC = () => {
       }
     }
     
-    Alert.alert('Kalkuláció betöltve', 'A kalkuláció adatai betöltésre kerültek. Módosítsd az értékeket és mentsd el újra.');
+    // Ha van total_monthly_income, akkor frissítjük az expectedIncome-ot
+    if (calculation.total_monthly_income) {
+      setExpectedIncome(calculation.total_monthly_income);
+    }
+    
+    Alert.alert('Kalkuláció betöltve', 'A kalkuláció adatai betöltésre kerültek. Az elvárható bevétel is frissítésre került.');
   };
 
   // Pull to refresh
@@ -1242,8 +1328,7 @@ const BudgetScreen: React.FC = () => {
               <View style={styles.calculationHeader}>
                 <View style={styles.calculationTitleContainer}>
                   <Text style={styles.calculationName}>
-                    {users.find(u => u.id === calc.family_member_id)?.user_metadata?.full_name || 'Ismeretlen'} - 
-                    {new Date(calc.created_at).toLocaleDateString('hu-HU', { month: 'long' })}
+                    {calc.name || `${users.find(u => u.id === calc.family_member_id)?.user_metadata?.full_name || 'Ismeretlen'} - ${new Date(calc.created_at).toLocaleDateString('hu-HU', { month: 'long' })}`}
                   </Text>
                   <Text style={styles.calculationDate}>
                     {new Date(calc.created_at).toLocaleDateString('hu-HU')}
@@ -1282,6 +1367,12 @@ const BudgetScreen: React.FC = () => {
                   <Text style={styles.calculationDetailLabel}>Nettó bér:</Text>
                   <Text style={[styles.calculationDetailValue, styles.greenText]}>{calc.netto_ber.toLocaleString()} Ft</Text>
                 </View>
+                {calc.total_monthly_income && (
+                  <View style={styles.calculationDetailRow}>
+                    <Text style={styles.calculationDetailLabel}>Teljes havi jövedelem:</Text>
+                    <Text style={[styles.calculationDetailValue, styles.blueText]}>{calc.total_monthly_income.toLocaleString()} Ft</Text>
+                  </View>
+                )}
               </View>
             </View>
           ))
@@ -1690,6 +1781,76 @@ const BudgetScreen: React.FC = () => {
                   onPress={addAdditionalIncome}
                 >
                   <Text style={styles.saveModalText}>Hozzáad</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Save Calculation Modal */}
+        <Modal
+          visible={isSaveCalculationModalVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setIsSaveCalculationModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Kalkuláció mentése</Text>
+                <TouchableOpacity onPress={() => setIsSaveCalculationModalVisible(false)}>
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.modalBody}>
+                <View style={styles.inputContainer}>
+                  <Text style={styles.inputLabel}>Kalkuláció neve</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={calculationName}
+                    onChangeText={setCalculationName}
+                    placeholder="Pl. János - 2025 január"
+                  />
+                </View>
+                
+                <View style={styles.saveSummaryContainer}>
+                  <Text style={styles.saveSummaryTitle}>Összefoglaló:</Text>
+                  {eredmény && (
+                    <>
+                      <Text style={styles.saveSummaryText}>Nettó bér: {formatCurrency(eredmény.netto)}</Text>
+                      <Text style={styles.saveSummaryText}>
+                        Egyéb jövedelem: {formatCurrency(additionalIncomes.reduce((sum, income) => sum + income.amount, 0))}
+                      </Text>
+                      <Text style={styles.saveSummaryTotal}>
+                        Teljes havi jövedelem: {formatCurrency(getTotalMonthlyIncome())}
+                      </Text>
+                      <Text style={styles.saveSummaryNote}>
+                        ✓ Ez a kalkuláció egyben havi bevételi tervként is mentésre kerül
+                      </Text>
+                    </>
+                  )}
+                </View>
+              </View>
+              
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={styles.cancelModalButton}
+                  onPress={() => setIsSaveCalculationModalVisible(false)}
+                >
+                  <Text style={styles.cancelModalText}>Mégse</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.saveModalButton}
+                  onPress={saveCalculationWithName}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator size="small" color="white" />
+                  ) : (
+                    <Text style={styles.saveModalText}>Mentés</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
@@ -2563,6 +2724,35 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
     borderRadius: 8,
     padding: 8,
+  },
+  saveSummaryContainer: {
+    backgroundColor: 'rgba(20, 184, 166, 0.1)',
+    borderRadius: 8,
+    padding: 16,
+    marginTop: 16,
+  },
+  saveSummaryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  saveSummaryText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  saveSummaryTotal: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#14B8A6',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  saveSummaryNote: {
+    fontSize: 12,
+    color: '#10B981',
+    fontStyle: 'italic',
   },
 });
 
