@@ -49,7 +49,7 @@ Miután beállítottad a billing-et, teszteld azonnal a terminálban:
 ```bash
 # Teszt kérés küldése
 curl -X POST \
-  "https://vision.googleapis.com/v1/images:annotate?key=AIzaSyCfAX668cbXS6Ny7lBxzJc6Lkc6kHa82TY" \
+  "https://vision.googleapis.com/v1/images:annotate?key=YOUR_GOOGLE_VISION_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "requests": [
@@ -126,7 +126,7 @@ export const processReceiptWithOCR = async (imageUri: string): Promise<ReceiptDa
 
 ### ✅ 3. Environment változók beállítva
 ```env
-EXPO_PUBLIC_GOOGLE_VISION_API_KEY=AIzaSyCfAX668cbXS6Ny7lBxzJc6Lkc6kHa82TY
+EXPO_PUBLIC_GOOGLE_VISION_API_KEY=YOUR_GOOGLE_VISION_API_KEY
 ```
 
 ### ✅ 4. Aktiválás befejezve
