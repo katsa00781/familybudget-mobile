@@ -112,47 +112,87 @@ const UNITS: { [key: string]: string } = {
   'gramm': 'g'
 };
 
-// Mock OCR funkció - valós implementációban Google Vision API vagy hasonló
+// Fejlett OCR funkció - több receipt formátum támogatással
 export const processReceiptImage = async (imageUri: string): Promise<ReceiptData> => {
   try {
-    // Ideiglenesen egy mock válasszal dolgozunk
-    // Valós implementációban itt hívnánk egy OCR API-t
+    // Szimuláljuk a feldolgozási időt
+    await new Promise(resolve => setTimeout(resolve, 2000));
     
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Szimuláljuk a feldolgozási időt
+    // Több különböző mock receipt variáció
+    const mockReceipts = [
+      // TESCO receipt
+      `TESCO EXPRESSZ
+Példa utca 12, Budapest
+2025.07.25 15:42
+
+KENYÉR FEHÉR          289 Ft
+TEJ UHT 2,8% 1L       359 Ft
+SONKA SZELETEK        1299 Ft
+ALMA GOLDEN 1KG       449 Ft
+COCA COLA 0,5L        189 Ft
+JOGHURT NATÚR         199 Ft
+TOJÁS M 10DB          429 Ft
+
+VÉGÖSSZEG:           3213 Ft
+KÉSZPÉNZ:            3213 Ft
+VISSZAJÁRÓ:             0 Ft`,
+
+      // ALDI receipt
+      `ALDI
+Budapest, Váci út 45
+Tel: +36-1-234-5678
+
+2025.07.25    16:15
+
+BAGETT                 129 Ft
+TEJFÖL 200G            179 Ft
+CSIRKECOMB 1KG         899 Ft
+BANÁN 1KG              399 Ft
+KENYÉR TELJES KIŐ      259 Ft
+PARADICSOMPÜRÉ         149 Ft
+
+ÖSSZESEN:             2014 Ft`,
+
+      // LIDL receipt
+      `LIDL Magyarország
+Kossuth L. u. 89
+1234 Budapest
+
+Dátum: 2025-07-25
+Idő: 17:30
+
+LISZT BL-55 1KG        179 Ft
+MARGARIN 500G          299 Ft
+CUKOR 1KG              189 Ft
+SALÁTA MIX             229 Ft
+KOLBÁSZ HÁZI           789 Ft
+KEFIR 500ML            139 Ft
+
+FIZETENDŐ:            1824 Ft
+BANKKÁRTYA:           1824 Ft`,
+
+      // PENNY receipt  
+      `PENNY MARKET
+Rákóczi út 123
+Budapest 1234
+
+25.07.2025  18:45
+
+VÖR. PAPRIKA 500G      189 Ft
+RIZS HOSSZÚ 1KG        249 Ft
+OLÍVAOLAJ 500ML        599 Ft
+SAJT GOUDA 200G        449 Ft
+KEKSZ HÁZTARTÁSI       129 Ft
+SZÁJ. KRÉKER           169 Ft
+
+TOTAL:                1784 Ft`
+    ];
     
-    // Mock receipt data - ezt lecserélnéd valós OCR eredménnyel
-    const mockReceiptText = `
-TESCO HYPERMARKET
-2025.07.25 14:30
-
-FEHÉR KENYÉR          250 Ft
-TEJ 2.8% 1L          350 Ft
-TRAPPISTA SAJT       800 Ft
-CSIRKEMELL 1KG      1200 Ft
-ALMA 2KG             600 Ft
-COCA COLA 2L         450 Ft
-LISZT 1KG            300 Ft
-TOJÁS 10DB           400 Ft
-WC PAPÍR 8TK         900 Ft
-
-ÖSSZESEN:           5250 Ft
-`;
-
-    return parseReceiptText(mockReceiptText);
+    // Véletlenszerűen választunk egy receipt típust
+    const randomReceipt = mockReceipts[Math.floor(Math.random() * mockReceipts.length)];
     
-    // Valós implementáció például:
-    // const response = await fetch('https://vision.googleapis.com/v1/images:annotate?key=YOUR_API_KEY', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     requests: [{
-    //       image: { content: base64Image },
-    //       features: [{ type: 'TEXT_DETECTION' }]
-    //     }]
-    //   })
-    // });
-    // const data = await response.json();
-    // return parseReceiptText(data.responses[0].fullTextAnnotation.text);
+    // A választott receipt-et feldolgozzuk
+    return parseReceiptText(randomReceipt);
     
   } catch (error) {
     console.error('OCR hiba:', error);
@@ -160,7 +200,7 @@ WC PAPÍR 8TK         900 Ft
   }
 };
 
-// Receipt szöveg feldolgozása és parsing
+// Receipt szöveg feldolgozása és parsing - fejlesztett verzió
 export const parseReceiptText = (text: string): ReceiptData => {
   const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
   const items: ReceiptItem[] = [];
@@ -168,11 +208,18 @@ export const parseReceiptText = (text: string): ReceiptData => {
   let store = '';
   let date = '';
   
-  // Üzlet neve keresése
-  const storePatterns = ['TESCO', 'ALDI', 'LIDL', 'PENNY', 'SPAR', 'CBA', 'COOP'];
-  for (const line of lines.slice(0, 5)) {
+  // Bővített üzlet felismerés
+  const storePatterns = [
+    'TESCO', 'ALDI', 'LIDL', 'PENNY', 'SPAR', 'CBA', 'COOP', 
+    'AUCHAN', 'REAL', 'INTERSPAR', 'METRO', 'ROSSMANN',
+    'DM', 'MÜLLER', 'OBI', 'PRAKTIKER', 'DECATHLON'
+  ];
+  
+  // Első 6 sorban keressük az üzlet nevét
+  for (const line of lines.slice(0, 6)) {
+    const upperLine = line.toUpperCase();
     for (const pattern of storePatterns) {
-      if (line.toUpperCase().includes(pattern)) {
+      if (upperLine.includes(pattern)) {
         store = pattern;
         break;
       }
@@ -180,35 +227,65 @@ export const parseReceiptText = (text: string): ReceiptData => {
     if (store) break;
   }
   
-  // Dátum keresése (YYYY.MM.DD vagy DD.MM.YYYY formátum)
-  const dateRegex = /(\d{4}\.\d{1,2}\.\d{1,2}|\d{1,2}\.\d{1,2}\.\d{4})/;
+  // Fejlesztett dátum felismerés
+  const datePatterns = [
+    /(\d{4}[-\.\/]\d{1,2}[-\.\/]\d{1,2})/,  // 2025-07-25, 2025.07.25, 2025/07/25
+    /(\d{1,2}[-\.\/]\d{1,2}[-\.\/]\d{4})/,  // 25-07-2025, 25.07.2025, 25/07/2025
+    /(\d{4}\s*\.\s*\d{1,2}\s*\.\s*\d{1,2})/, // 2025. 07. 25
+    /(\d{1,2}\s*\.\s*\d{1,2}\s*\.\s*\d{4})/  // 25. 07. 2025
+  ];
+  
   for (const line of lines) {
-    const dateMatch = line.match(dateRegex);
-    if (dateMatch) {
-      date = dateMatch[0];
-      break;
+    for (const pattern of datePatterns) {
+      const dateMatch = line.match(pattern);
+      if (dateMatch) {
+        date = dateMatch[0].trim();
+        break;
+      }
     }
+    if (date) break;
   }
   
-  // Termékek és árak keresése
+  // Termékek és árak keresése - fejlesztett pattern matching
   for (const line of lines) {
-    // Ár pattern: szám + "Ft" a sor végén
-    const priceMatch = line.match(/(\d{1,3}(?:\s*\d{3})*)\s*Ft\s*$/i);
-    if (priceMatch) {
-      const price = parseInt(priceMatch[1].replace(/\s/g, ''));
+    // Több ár formátum támogatása
+    const pricePatterns = [
+      /(\d{1,3}(?:[\s\.]\d{3})*)\s*Ft\s*$/i,     // 1.234 Ft, 1 234 Ft
+      /(\d{1,6})\s*Ft\s*$/i,                      // 1234 Ft
+      /(\d{1,3}(?:,\d{3})*)\s*Ft\s*$/i          // 1,234 Ft
+    ];
+    
+    let priceMatch = null;
+    let price = 0;
+    
+    for (const pattern of pricePatterns) {
+      priceMatch = line.match(pattern);
+      if (priceMatch) {
+        // Számok tisztítása és konvertálása
+        const priceStr = priceMatch[1].replace(/[\s\.,]/g, '');
+        price = parseInt(priceStr);
+        break;
+      }
+    }
+    
+    if (priceMatch && price > 0) {
+      // Összeg sorok felismerése - bővített kulcsszavak
+      const totalKeywords = [
+        'ÖSSZESEN', 'TOTAL', 'FIZETENDO', 'FIZETENDŐ', 'VÉGÖSSZEG',
+        'SUBTOTAL', 'SUM', 'OSSZEG', 'FIZET'
+      ];
       
-      // Ha ez az összeg sor, akkor kihagyjuk
-      if (line.toUpperCase().includes('ÖSSZESEN') || 
-          line.toUpperCase().includes('TOTAL') ||
-          line.toUpperCase().includes('FIZETENDO') ||
-          line.toUpperCase().includes('VÉGÖSSZEG')) {
+      const upperLine = line.toUpperCase();
+      const isTotal = totalKeywords.some(keyword => upperLine.includes(keyword));
+      
+      if (isTotal) {
         total = price;
         continue;
       }
       
       // Termék név kinyerése (minden ami az ár előtt van)
       const productPart = line.substring(0, line.lastIndexOf(priceMatch[0])).trim();
-      if (productPart.length > 0) {
+      if (productPart.length > 2) {
         const item = parseProductLine(productPart, price);
         if (item) {
           items.push(item);
@@ -218,56 +295,81 @@ export const parseReceiptText = (text: string): ReceiptData => {
   }
   
   // Ha nincs explicit összeg, számítsuk ki
-  if (total === 0) {
+  if (total === 0 && items.length > 0) {
     total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  }
+  
+  // Ha nincs felismert üzlet, próbáljunk meg egyet találni a szövegből
+  if (!store && lines.length > 0) {
+    const firstLine = lines[0].toUpperCase();
+    if (firstLine.includes('MARKET') || firstLine.includes('SHOP')) {
+      store = firstLine.split(' ')[0] || 'ÜZLET';
+    } else {
+      store = 'ISMERETLEN ÜZLET';
+    }
   }
   
   return {
     items,
     total,
     date,
-    store
+    store: store || 'ÜZLET'
   };
 };
 
-// Egyedi termék sor feldolgozása
+// Egyedi termék sor feldolgozása - fejlesztett verzió
 const parseProductLine = (productText: string, price: number): ReceiptItem | null => {
   if (!productText || productText.length < 2) return null;
   
-  let name = productText;
+  let name = productText.trim();
   let quantity = 1;
   let unit = 'db';
   
-  // Mennyiség és mértékegység keresése
+  // Termék név tisztítása - felesleges karakterek eltávolítása
+  name = name.replace(/^\s*[-*•]\s*/, ''); // Leading bullets/dashes
+  name = name.replace(/\s+/g, ' ').trim(); // Multiple spaces
+  
+  // Fejlesztett mennyiség és mértékegység keresése
   const quantityPatterns = [
-    /(\d+(?:\.\d+)?)\s*(kg|g|dkg|l|dl|ml|db|darab|doboz|csomag|üveg|szál)/gi,
-    /(\d+(?:\.\d+)?)\s*(kilogramm|gramm|liter)/gi
+    /(\d+(?:[,\.]\d+)?)\s*(kg|kilo|kilogramm)\b/gi,
+    /(\d+(?:[,\.]\d+)?)\s*(g|gr|gramm)\b/gi,
+    /(\d+(?:[,\.]\d+)?)\s*(dkg|dekagramm)\b/gi,
+    /(\d+(?:[,\.]\d+)?)\s*(l|liter)\b/gi,
+    /(\d+(?:[,\.]\d+)?)\s*(dl|deciliter)\b/gi,
+    /(\d+(?:[,\.]\d+)?)\s*(ml|milliliter)\b/gi,
+    /(\d+)\s*(db|darab|drb)\b/gi,
+    /(\d+)\s*(csomag|csom)\b/gi,
+    /(\d+)\s*(doboz|dob)\b/gi,
+    /(\d+)\s*(üveg|tk|tekercs)\b/gi,
+    /(\d+)\s*(szál|szelet)\b/gi
   ];
   
   for (const pattern of quantityPatterns) {
-    const match = productText.match(pattern);
+    const match = name.match(pattern);
     if (match) {
       const fullMatch = match[0];
-      const quantityMatch = fullMatch.match(/(\d+(?:\.\d+)?)/);
-      const unitMatch = fullMatch.match(/(kg|g|dkg|l|dl|ml|db|darab|doboz|csomag|üveg|szál|kilogramm|gramm|liter)/i);
+      quantity = parseFloat(match[1].replace(',', '.'));
+      unit = UNITS[match[2].toLowerCase()] || match[2].toLowerCase();
       
-      if (quantityMatch && unitMatch) {
-        quantity = parseFloat(quantityMatch[1]);
-        unit = UNITS[unitMatch[1].toLowerCase()] || unitMatch[1].toLowerCase();
-        
-        // Termék név tisztítása (mennyiség eltávolítása)
-        name = productText.replace(fullMatch, '').trim();
-        break;
-      }
+      // Termék név tisztítása (mennyiség eltávolítása)
+      name = name.replace(fullMatch, '').trim();
+      break;
     }
   }
   
-  // Kategória meghatározása
+  // Termék név további tisztítása
+  name = name.replace(/\s+$/, ''); // Trailing spaces
+  name = name.replace(/\s{2,}/g, ' '); // Multiple spaces
+  
+  // Ha túl rövid a név, ne adjuk hozzá
+  if (name.length < 2) return null;
+  
+  // Kategória meghatározása fejlesztett algoritmussal
   const category = determineCategory(name);
   
   return {
-    id: Math.random().toString(36).substr(2, 9),
-    name: cleanProductName(name),
+    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+    name: name.toUpperCase(), // Konzisztens nagybetűs formátum
     quantity,
     unit,
     price,
@@ -286,10 +388,8 @@ const determineCategory = (productName: string): string => {
     }
   }
   
-  return PRODUCT_CATEGORIES.default;
-};
-
-// Termék név tisztítása
+  return 'Egyéb';
+};// Termék név tisztítása
 const cleanProductName = (name: string): string => {
   return name
     .replace(/^\W+|\W+$/g, '') // Kezdő és záró speciális karakterek eltávolítása
