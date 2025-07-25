@@ -616,6 +616,28 @@ const BudgetScreen: React.FC = () => {
 
   // Kamera engedély ellenőrzése és kép készítése
   const handleReceiptScan = async () => {
+    Alert.alert(
+      'Receipt Scanner',
+      'Hogyan szeretnéd hozzáadni a receipt képet?',
+      [
+        {
+          text: 'Mégse',
+          style: 'cancel'
+        },
+        {
+          text: 'Fotó készítése',
+          onPress: () => takePhotoFromCamera(),
+        },
+        {
+          text: 'Galéria',
+          onPress: () => selectPhotoFromGallery(),
+        }
+      ]
+    );
+  };
+
+  // Kamera használata
+  const takePhotoFromCamera = async () => {
     try {
       // Kamera engedély kérése
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -623,7 +645,7 @@ const BudgetScreen: React.FC = () => {
       if (status !== 'granted') {
         Alert.alert(
           'Engedély szükséges',
-          'A receipt scanner használatához engedélyezned kell a kamera hozzáférést.',
+          'A kamera használatához engedélyezned kell a kamera hozzáférést.',
           [
             { text: 'Mégse', style: 'cancel' },
             { text: 'Beállítások', onPress: () => {} }
@@ -634,7 +656,7 @@ const BudgetScreen: React.FC = () => {
 
       // Kép készítése
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
@@ -650,8 +672,49 @@ const BudgetScreen: React.FC = () => {
         await processReceiptWithOCR(imageUri);
       }
     } catch (error) {
-      console.error('Hiba a receipt scan során:', error);
+      console.error('Hiba a kamera használat során:', error);
       Alert.alert('Hiba', 'Nem sikerült elkészíteni a képet');
+    }
+  };
+
+  // Galéria használata
+  const selectPhotoFromGallery = async () => {
+    try {
+      // Galéria engedély kérése
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert(
+          'Engedély szükséges',
+          'A galéria használatához engedélyezned kell a média könyvtár hozzáférést.',
+          [
+            { text: 'Mégse', style: 'cancel' },
+            { text: 'Beállítások', onPress: () => {} }
+          ]
+        );
+        return;
+      }
+
+      // Kép kiválasztása a galériából
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+        base64: false,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const imageUri = result.assets[0].uri;
+        setReceiptImage(imageUri);
+        setIsReceiptScannerVisible(true);
+        
+        // OCR feldolgozás indítása
+        await processReceiptWithOCR(imageUri);
+      }
+    } catch (error) {
+      console.error('Hiba a galéria használat során:', error);
+      Alert.alert('Hiba', 'Nem sikerült kiválasztani a képet');
     }
   };
 
@@ -1578,7 +1641,7 @@ const BudgetScreen: React.FC = () => {
                   style={styles.cameraButton}
                   onPress={handleReceiptScan}
                 >
-                  <Ionicons name="camera" size={20} color="white" />
+                  <Ionicons name="images" size={20} color="white" />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.newBudgetButton}
@@ -2021,15 +2084,52 @@ const BudgetScreen: React.FC = () => {
               </View>
 
               <ScrollView style={styles.receiptModalBody}>
+                {!receiptImage && !isProcessingReceipt && (
+                  <View style={styles.receiptImageContainer}>
+                    <Text style={styles.receiptImageTitle}>Receipt Scanner</Text>
+                    <View style={styles.receiptImagePlaceholder}>
+                      <Ionicons name="camera" size={64} color="#9CA3AF" />
+                      <Text style={styles.receiptImagePath}>
+                        Kép kiválasztása szükséges
+                      </Text>
+                    </View>
+                    
+                    <TouchableOpacity
+                      style={styles.changeImageButton}
+                      onPress={() => {
+                        setIsReceiptScannerVisible(false);
+                        handleReceiptScan();
+                      }}
+                    >
+                      <Ionicons name="camera" size={16} color="#14B8A6" />
+                      <Text style={styles.changeImageButtonText}>Kép választása</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
                 {receiptImage && (
                   <View style={styles.receiptImageContainer}>
-                    <Text style={styles.receiptImageTitle}>Elkészített kép:</Text>
+                    <Text style={styles.receiptImageTitle}>Kiválasztott kép:</Text>
                     <View style={styles.receiptImagePlaceholder}>
                       <Ionicons name="image" size={64} color="#9CA3AF" />
                       <Text style={styles.receiptImagePath}>
                         {receiptImage.split('/').pop()}
                       </Text>
                     </View>
+                    
+                    {/* Újra választás gomb */}
+                    <TouchableOpacity
+                      style={styles.changeImageButton}
+                      onPress={() => {
+                        setReceiptImage(null);
+                        setReceiptData(null);
+                        setIsReceiptScannerVisible(false);
+                        handleReceiptScan();
+                      }}
+                    >
+                      <Ionicons name="camera" size={16} color="#14B8A6" />
+                      <Text style={styles.changeImageButtonText}>Másik kép választása</Text>
+                    </TouchableOpacity>
                   </View>
                 )}
 
@@ -3179,6 +3279,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'white',
     marginLeft: 4,
+  },
+  changeImageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(20, 184, 166, 0.1)',
+    borderColor: '#14B8A6',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 12,
+  },
+  changeImageButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#14B8A6',
+    marginLeft: 6,
   },
 });
 
