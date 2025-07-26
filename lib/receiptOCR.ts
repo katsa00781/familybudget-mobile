@@ -90,88 +90,83 @@ const processWithGPT4Vision = async (imageUri: string): Promise<ReceiptData> => 
       messages: [
         {
           role: 'system',
-          content: `Te egy magyar nyugta OCR szakértő vagy, aki magyar áruházláncok (TESCO, ALDI, LIDL, SPAR, CBA, COOP, PENNY, AUCHAN) nyugtáit elemzi.
+          content: `Feladat: Értelmezd a csatolt blokkról készült fényképet, és készíts strukturált JSON listát a rajta szereplő termékekről.
 
-FELADATOD: Elemezd a nyugtaképet és adj vissza pontos JSON adatokat.
-
-VÁLASZ FORMÁTUM (kötelező JSON):
+FORMÁTUM - Pontosan ezt a JSON struktúrát használd:
 {
   "items": [
     {
-      "name": "TERMÉK NÉV",
-      "quantity": 1,
-      "unit": "db", 
+      "name": "TERMÉK MEGNEVEZÉSE",
+      "brand": "MÁRKA",
+      "category": "KATEGÓRIA", 
       "price": 450,
-      "category": "Kategória"
+      "unit": "MÉRTÉKEGYSÉG"
     }
   ],
-  "total": 450,
-  "store": "ÜZLET NÉV",
-  "date": "2025.07.25"
+  "store_name": "ÁRUHÁZ NEVE",
+  "total": 1250,
+  "date": "2025.07.26"
 }
 
-🇭🇺 MAGYAR OCR HIBAJAVÍTÁSOK (KRITIKUS):
-• 0 → O: "TEJF0L" → "TEJFÖL", "J0GHURT" → "JOGHURT"
-• 1 → I: "K1NYÉR" → "KENYÉR", "CS1RKE" → "CSIRKE"  
-• 3 → E: "K3NYÉR" → "KENYÉR", "T3J" → "TEJ"
-• 4 → A: "P4RADICSOM" → "PARADICSOM", "H4GYMA" → "HAGYMA"
-• 5 → S: "5ONKA" → "SONKA", "5PAR" → "SPAR"
+TERMÉK MEZŐK:
+• "name" – a termék megnevezése, emberi értelemmel kiegészítve vagy javítva (pl. "Pöttyös0%tejsüti20" → "Pöttyös tejdesszert")
+• "brand" – márka (ha van feltüntetve, különben null)
+• "category" – becsült kategória: "Tejtermékek", "Pékáruk", "Hús és hal", "Zöldség és gyümölcs", "Édességek", "Italok", "Háztartás", "Egyéb"
+• "price" – a termék ára forintban, egész számként (int)
+• "unit" – mennyiség mértékegységgel együtt, pl. "250 g", "1.5 l", "db", "1.08 kg"
+
+GLOBÁLIS MEZŐK:
+• "store_name" – áruház neve (TESCO, ALDI, LIDL, SPAR, CBA, COOP, PENNY, AUCHAN)
+• "total" – végösszeg forintban
+• "date" – dátum ÉÉÉÉ.HH.NN formátumban
+
+🇭🇺 MAGYAR OCR HIBAJAVÍTÁSOK:
+• 0 → O: "TEJF0L" → "TEJFÖL"
+• 1 → I: "K1NYÉR" → "KENYÉR"  
+• 3 → E: "K3NYÉR" → "KENYÉR"
+• 4 → A: "P4RADICSOM" → "PARADICSOM"
+• 5 → S: "5ONKA" → "SONKA"
 • 6 → G: "JO6HURT" → "JOGHURT"
-• 8 → B: "KOL8ÁSZ" → "KOLBÁSZ", "C8A" → "CBA"
+• 8 → B: "KOL8ÁSZ" → "KOLBÁSZ"
 
-📦 MAGYAR TERMÉK KATEGÓRIÁK:
-• Tejtermékek: tej, sajt, túró, joghurt, vaj, tejföl, tejszín, kefir, mascarpone
-• Pékáruk: kenyér, kifli, zsemle, kalács, briós, bagett, croissant, rétes
-• Hús és hal: hús, csirke, sertés, marha, sonka, szalámi, kolbász, virsli, hal
-• Zöldség és gyümölcs: alma, banán, narancs, paradicsom, hagyma, krumpli, répa, saláta
-• Édességek: csokoládé, cukor, méz, bonbon, keksz, sütemény, torta
-• Italok: víz, üdítő, tea, kávé, sör, bor, juice, ásványvíz
-• Háztartás: mosószer, tisztítószer, wc papír, mosogatószer, szappan, sampon
+⚠️ FONTOS SZABÁLYOK:
+• Karakterhibás vagy rövidítésekkel teli neveket javítsd emberileg értelmes névvé
+• Ha nem állapítható meg pontosan, tippelj logikusan
+• NE tartalmazza a végösszeget, fizetési információt, visszaváltást vagy nem terméktípusú sorokat a terméklistában
+• Csak a nyugtán LÁTHATÓ termékeket dolgozd fel
+• NE találj ki semmit
+• Árak eredeti forint értékben (pl. 450 Ft = 450)
 
-💰 ÁR SZABÁLYOK:
-- Eredeti forint érték: 450 Ft = 450, 199 Ft = 199
-- Tizedesjegyek: 399,90 Ft = 399 (egészre kerekítve)
-- NE szorozzuk meg semmivel az árat!
-
-📏 MÉRTÉKEGYSÉGEK:
-- kg, g, dkg (tömeg)
-- l, dl, ml (űrmérték)  
-- db, csomag, doboz, üveg, szál (darabszám)
-
-🏪 ÜZLETLÁNCOK FELISMERÉSE:
-- TESCO, ALDI, LIDL, SPAR, CBA, COOP, PENNY, AUCHAN, INTERSPAR, MATCH
-
-⚠️ FONTOS:
-- NE találj ki termékeket!
-- Csak a nyugtán látható tételeket dolgozd fel
-- Ha bizonytalan vagy, hagyd ki az adott tételt
-- Dátum formátum: ÉÉÉÉ.HH.NN (2025.07.25)
-- CSAK tiszta JSON választ adj, semmi mást!`
+KIMENET: Csak tiszta JSON, semmi más szöveg vagy magyarázat!`
         },
         {
           role: 'user',
           content: [
             {
               type: 'text',
-              text: `🇭🇺 MAGYAR NYUGTA ELEMZÉS
+              text: `🇭🇺 MAGYAR NYUGTA BLOKKÉRTELMEZÉS
 
-Elemezd alaposan ezt a magyar áruházi nyugtát és dolgozd fel JSON formátumba!
+Értelmezd alaposan ezt a magyar áruházi blokkról készült fényképet és készíts strukturált JSON listát!
 
 🔍 AMIT KERESS:
-1. TERMÉKNEVEK - Javítsd az OCR hibákat (0→O, 1→I, 3→E, 4→A, 5→S, 8→B)
-2. ÁRAK - EREDETI forint érték (pl. 450 Ft = 450, NE szorozzuk meg!)
-3. MENNYISÉGEK - kg, g, db, l, csomag, doboz
-4. ÜZLET NÉV - TESCO, ALDI, LIDL, SPAR, CBA, stb.
-5. DÁTUM - ÉÉÉÉ.HH.NN formátum
-6. KATEGÓRIÁK - 8 magyar kategória közül válassz
+1. TERMÉKNEVEK - Javítsd emberileg értelmesre (pl. "Pöttyös0%tejsüti" → "Pöttyös tejdesszert")
+2. MÁRKÁK - Ha feltűntetett, különben null
+3. ÁRAK - Eredeti forint érték (pl. 450 Ft = 450)
+4. MÉRTÉKEGYSÉGEK - kg, g, l, dl, db stb.
+5. ÁRUHÁZ NEVE - TESCO, ALDI, LIDL, SPAR, CBA stb.
+6. DÁTUM - ÉÉÉÉ.HH.NN formátum
+7. KATEGÓRIÁK - 8 magyar kategória közül válassz
 
-⚠️ FONTOS: 
-- Csak a nyugtán LÁTHATÓ termékeket dolgozd fel
-- NE találj ki semmit
-- OCR hibákat JAVÍTSD (TEJF0L→TEJFÖL)
-- Árak eredeti forint értékben!
+🛠️ OCR HIBAJAVÍTÁSOK:
+• 0→O, 1→I, 3→E, 4→A, 5→S, 6→G, 8→B
+• Karakterhibás neveket javítsd logikusan
 
-Válaszolj CSAK JSON-nal:`
+⚠️ KIZÁRÁSOK:
+• Végösszeg, fizetési infó, visszaváltás NE legyen a terméklistában
+• Csak valós termékek
+• Ne találj ki semmit
+
+Válaszolj CSAK JSON-nal, semmi más!`
             },
             {
               type: 'image_url',
@@ -218,8 +213,8 @@ Válaszolj CSAK JSON-nal:`
     const items: ReceiptItem[] = (parsedData.items || []).map((item: any, index: number) => ({
       id: `gpt4_${index}_${Date.now()}`,
       name: postProcessProductName(item.name || 'Ismeretlen termék'),
-      quantity: Math.max(item.quantity || 1, 1),
-      unit: validateUnit(item.unit) || 'db',
+      quantity: parseQuantityFromUnit(item.unit) || 1, // Extract quantity from unit if present
+      unit: validateUnit(extractUnit(item.unit)) || 'db',
       price: Math.max(item.price || 0, 1), // Min 1 Ft
       category: validateCategory(item.category) || 'Egyéb',
       checked: false
@@ -233,7 +228,7 @@ Válaszolj CSAK JSON-nal:`
       items,
       total: parsedData.total || items.reduce((sum, item) => sum + (item.price * item.quantity), 0),
       date: parsedData.date || new Date().toLocaleDateString('hu-HU'),
-      store: parsedData.store || 'Ismeretlen üzlet'
+      store: parsedData.store_name || parsedData.store || 'Ismeretlen üzlet' // Handle both formats
     };
 
     console.log(`✅ GPT-4 Vision parsing: ${result.items.length} termék, ${result.total} Ft összesen`);
@@ -246,15 +241,15 @@ Válaszolj CSAK JSON-nal:`
   }
 };
 
-// � Intelligens utófeldolgozó függvények a még jobb pontosságért
+// 🧠 Intelligens utófeldolgozó függvények a még jobb pontosságért
 const postProcessProductName = (name: string): string => {
   if (!name || name.length < 2) return 'Ismeretlen termék';
   
   let processed = name.trim().toUpperCase();
   
-  // További OCR hibák javítása, amiket a GPT esetleg kihagyott
+  // További OCR hibák javítása és emberi értelmezés javítása
   const extraFixes: { [key: string]: string } = {
-    // Gyakori hibák még egyszer
+    // OCR hibák
     'TEJF0L': 'TEJFÖL', 'TEJFOL': 'TEJFÖL', 'TEJF8L': 'TEJFÖL',
     'K1NYÉR': 'KENYÉR', 'KENYÉR': 'KENYÉR', 'K3NYÉR': 'KENYÉR',
     'J0GHURT': 'JOGHURT', 'JÓGHURT': 'JOGHURT', 'J8GHURT': 'JOGHURT',
@@ -269,9 +264,21 @@ const postProcessProductName = (name: string): string => {
     '4LMA': 'ALMA', 'ALM4': 'ALMA', '4LM4': 'ALMA',
     'B4NÁN': 'BANÁN', 'BAN4N': 'BANÁN', 'B4N4N': 'BANÁN',
     'N4RANCS': 'NARANCS', 'NARANC5': 'NARANCS', 'N4RANC5': 'NARANCS',
-    'U80RKA': 'UBORKA', 'UB0RKA': 'UBORKA', 'U8ORKA': 'UBORKA',
-    'R3PA': 'RÉPA', 'REP4': 'RÉPA', 'R3P4': 'RÉPA',
-    'SZ4LÁMI': 'SZALÁMI', 'SZALAM1': 'SZALÁMI', 'SZ4L4MI': 'SZALÁMI',
+    
+    // Emberi értelmezés javítások (a prompt alapján)
+    'PÖTTYÖS0%TEJSÜTI': 'PÖTTYÖS TEJDESSZERT',
+    'PÖTTYÖS0%': 'PÖTTYÖS TEJDESSZERT',
+    'TEJSÜTI': 'TEJDESSZERT',
+    'SÜTI': 'SÜTEMÉNY',
+    'JOGH': 'JOGHURT',
+    'KENY': 'KENYÉR',
+    'ZSEM': 'ZSEMLE',
+    'KIF': 'KIFLI',
+    'PARAD': 'PARADICSOM',
+    'HAGYOM': 'HAGYMA',
+    'KRUMP': 'KRUMPLI',
+    'ALMÁ': 'ALMA',
+    'BANÁN': 'BANÁN',
     
     // Üzletnevek javítása
     'TESK0': 'TESCO', 'TES6O': 'TESCO', 'T3SCO': 'TESCO',
@@ -287,11 +294,10 @@ const postProcessProductName = (name: string): string => {
     processed = processed.replace(new RegExp(wrong, 'g'), correct);
   });
   
-  // Felesleges karakterek és szavak eltávolítása
+  // Felesleges karakterek és szavak eltávolítása, de megtartjuk a márkát
   processed = processed
     .replace(/\b(AKCIÓ|AKCIÓS|KEDVEZMÉNY|LEÁRAZ|SALE|OFFER)\b/gi, '')
-    .replace(/\d+\s*(KG|G|DKG|L|DL|ML|DB|CSOMAG|DOBOZ|ÜVEG|SZÁL)\b/gi, '')
-    .replace(/[^A-ZÁÉÍÓÖŐÚÜŰ0-9\s]/g, '')
+    .replace(/[^A-ZÁÉÍÓÖŐÚÜŰ0-9\s]/g, '') // Megtartjuk a számokat és betűket
     .replace(/\s+/g, ' ')
     .trim();
     
@@ -320,6 +326,26 @@ const validateUnit = (unit: string): string | null => {
   };
   
   return unitFixes[unitLower] || null;
+};
+
+// Parse quantity from unit string like "1.5 kg" -> 1.5
+const parseQuantityFromUnit = (unitStr: string): number | null => {
+  if (!unitStr) return null;
+  
+  const match = unitStr.match(/^(\d+(?:[.,]\d+)?)/);
+  if (match) {
+    return parseFloat(match[1].replace(',', '.'));
+  }
+  return null;
+};
+
+// Extract unit from unit string like "1.5 kg" -> "kg" 
+const extractUnit = (unitStr: string): string => {
+  if (!unitStr) return 'db';
+  
+  // Remove numbers and decimal separators, trim whitespace
+  const unit = unitStr.replace(/[\d.,\s]+/g, '').trim();
+  return unit || 'db';
 };
 
 const validateCategory = (category: string): string | null => {
