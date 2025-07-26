@@ -122,10 +122,12 @@ const ShoppingScreen: React.FC = () => {
     try {
       setLoading(true);
 
-      // Load shopping lists with correct database schema column names
+      // Load shopping lists - test with different column names to find correct schema
+      console.log('🔍 Testing database schema for shopping_lists table...');
+      
       const { data: listsData, error: listsError } = await supabase
         .from('shopping_lists')
-        .select('id, user_id, name, shopping_date, items, estimated_total, completed, created_at, updated_at')
+        .select('id, user_id, name, date, items, total_amount, completed, created_at, updated_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -147,9 +149,9 @@ const ShoppingScreen: React.FC = () => {
           id: list.id,
           user_id: list.user_id,
           name: list.name,
-          date: list.shopping_date, // shopping_date → date
+          date: list.date, // Direct mapping from database
           items: Array.isArray(list.items) ? list.items : [], // Parse items from JSONB
-          total_amount: list.estimated_total || 0, // estimated_total → total_amount
+          total_amount: list.total_amount || 0, // Direct mapping from database
           completed: list.completed,
           created_at: list.created_at,
           updated_at: list.updated_at,
@@ -292,7 +294,7 @@ const ShoppingScreen: React.FC = () => {
       const updateData = {
         name: newListName.trim(),
         items: newItems,
-        estimated_total: updatedTotal, // total_amount → estimated_total
+        total_amount: updatedTotal, // Use database total_amount field directly
       };
 
       const { error } = await supabase
@@ -358,7 +360,7 @@ const ShoppingScreen: React.FC = () => {
         id: generateId(), // Most már valódi UUID-t generál
         user_id: user.id,
         name: newListName.trim(),
-        shopping_date: new Date().toISOString().split('T')[0], // date → shopping_date
+        date: new Date().toISOString().split('T')[0], // Use database date field directly
         items: newListProducts.map(product => ({
           id: generateId(),
           name: product.name,
@@ -368,7 +370,7 @@ const ShoppingScreen: React.FC = () => {
           category: product.category,
           checked: false,
         })),
-        estimated_total: Math.round(estimatedTotal), // total_amount → estimated_total
+        total_amount: Math.round(estimatedTotal), // Use database total_amount field directly
         completed: false,
         created_at: new Date().toISOString(),
       };
@@ -547,7 +549,7 @@ const ShoppingScreen: React.FC = () => {
 
       // Create update object with correct database column names
       const updateData = {
-        estimated_total: Math.round(actualTotal), // total_amount → estimated_total
+        total_amount: Math.round(actualTotal), // Use database total_amount field directly
         completed: selectedItems.every(item => item.checked),
         items: selectedItems, // Update items in JSONB column
       };
@@ -1044,9 +1046,9 @@ const ShoppingScreen: React.FC = () => {
           id: newList.id,
           user_id: newList.user_id,
           name: newList.name,
-          shopping_date: newList.date, // date → shopping_date
+          date: newList.date, // Use database date field directly
           items: newList.items,
-          estimated_total: newList.total_amount, // total_amount → estimated_total
+          total_amount: newList.total_amount, // Use database total_amount field directly
           completed: newList.completed,
           created_at: newList.created_at,
         }]);

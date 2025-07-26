@@ -86,10 +86,10 @@ export interface ShoppingList {
   family_id?: string;
   name: string;
   description?: string;
-  shopping_date: string;
+  date: string; // Fixed: use 'date' instead of 'shopping_date' to match actual database
   store_name?: string;
   items: ShoppingItem[];
-  estimated_total: number;
+  total_amount: number; // Fixed: use 'total_amount' instead of 'estimated_total' to match actual database
   actual_total?: number;
   completed: boolean;
   created_at: string;
