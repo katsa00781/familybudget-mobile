@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
+import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { useFocusEffect } from '@react-navigation/native';
@@ -45,8 +46,8 @@ interface ShoppingList {
   updated_at?: string;
 }
 
-// Helper function to generate unique IDs
-const generateId = () => Math.random().toString(36).substr(2, 9);
+// Helper function to generate proper UUIDs for Supabase
+const generateId = () => uuidv4();
 
 const ShoppingScreen: React.FC = () => {
   const { user } = useAuth();
@@ -121,10 +122,10 @@ const ShoppingScreen: React.FC = () => {
     try {
       setLoading(true);
 
-      // Load shopping lists with specific columns to match database schema
+      // Load shopping lists with correct database schema column names
       const { data: listsData, error: listsError } = await supabase
         .from('shopping_lists')
-        .select('id, user_id, name, date, items, total_amount, completed, created_at, updated_at')
+        .select('id, user_id, name, shopping_date, items, estimated_total, completed, created_at, updated_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -141,10 +142,17 @@ const ShoppingScreen: React.FC = () => {
         // Only use mock data if there's a connection error, not if table is empty
         setShoppingLists([]);
       } else {
-        // Transform database data to match our interface
+        // Transform database data to match our local interface
         const transformedLists: ShoppingList[] = (listsData || []).map(list => ({
-          ...list,
+          id: list.id,
+          user_id: list.user_id,
+          name: list.name,
+          date: list.shopping_date, // shopping_date → date
           items: Array.isArray(list.items) ? list.items : [], // Parse items from JSONB
+          total_amount: list.estimated_total || 0, // estimated_total → total_amount
+          completed: list.completed,
+          created_at: list.created_at,
+          updated_at: list.updated_at,
         }));
         setShoppingLists(transformedLists);
       }
@@ -280,11 +288,11 @@ const ShoppingScreen: React.FC = () => {
       // Calculate updated total
       const updatedTotal = editingList.total_amount + Math.round(newTotal);
       
-      // Create update object for Supabase
+      // Create update object for Supabase with correct column names
       const updateData = {
         name: newListName.trim(),
         items: newItems,
-        total_amount: updatedTotal,
+        estimated_total: updatedTotal, // total_amount → estimated_total
       };
 
       const { error } = await supabase
@@ -345,11 +353,12 @@ const ShoppingScreen: React.FC = () => {
       // Calculate estimated total from selected products
       const estimatedTotal = newListProducts.reduce((sum, product) => sum + product.price, 0);
       
-      // Create list object for Supabase with web app structure
+      // Create list object for Supabase with correct database column names
       const listForSupabase = {
+        id: generateId(), // Most már valódi UUID-t generál
         user_id: user.id,
         name: newListName.trim(),
-        date: new Date().toISOString().split('T')[0],
+        shopping_date: new Date().toISOString().split('T')[0], // date → shopping_date
         items: newListProducts.map(product => ({
           id: generateId(),
           name: product.name,
@@ -359,7 +368,7 @@ const ShoppingScreen: React.FC = () => {
           category: product.category,
           checked: false,
         })),
-        total_amount: Math.round(estimatedTotal),
+        estimated_total: Math.round(estimatedTotal), // total_amount → estimated_total
         completed: false,
         created_at: new Date().toISOString(),
       };
@@ -536,9 +545,9 @@ const ShoppingScreen: React.FC = () => {
         sum + ((item.price || 0) * (item.quantity || 1)), 0
       );
 
-      // Create update object with only the fields that exist in the database
+      // Create update object with correct database column names
       const updateData = {
-        total_amount: Math.round(actualTotal),
+        estimated_total: Math.round(actualTotal), // total_amount → estimated_total
         completed: selectedItems.every(item => item.checked),
         items: selectedItems, // Update items in JSONB column
       };
@@ -917,6 +926,67 @@ const ShoppingScreen: React.FC = () => {
     }
   };
 
+  // Auto-save products from scanned receipt to database
+  const saveReceiptProductsToDatabase = async (receiptData: ReceiptData) => {
+    if (!user || !receiptData.items || receiptData.items.length === 0) {
+      return { savedCount: 0, skippedCount: 0 };
+    }
+
+    try {
+      console.log('💾 Termékek mentése az adatbázisba...', receiptData.items.length, 'termék');
+
+      // Get existing products to avoid duplicates
+      const { data: existingProducts, error: fetchError } = await supabase
+        .from('products')
+        .select('name, category')
+        .eq('user_id', user.id);
+
+      if (fetchError) {
+        console.warn('Figyelem a meglévő termékek lekérdezésénél:', fetchError);
+      }
+
+      const existingProductNames = new Set(
+        (existingProducts || []).map(p => `${p.name.toLowerCase()}|${p.category.toLowerCase()}`)
+      );
+
+      const productsToSave = receiptData.items
+        .filter(item => {
+          const key = `${item.name.toLowerCase()}|${item.category.toLowerCase()}`;
+          return !existingProductNames.has(key);
+        })
+        .map(item => ({
+          user_id: user.id,
+          name: item.name,
+          category: item.category,
+          unit: item.unit,
+          price: item.price,
+          description: `Blokk scan-ből: ${receiptData.store || 'Ismeretlen bolt'}`,
+          created_at: new Date().toISOString(),
+        }));
+
+      let savedCount = 0;
+      const skippedCount = receiptData.items.length - productsToSave.length;
+
+      if (productsToSave.length > 0) {
+        const { error: insertError } = await supabase
+          .from('products')
+          .insert(productsToSave);
+
+        if (insertError) {
+          console.error('❌ Hiba a termékek mentésekor:', insertError);
+        } else {
+          savedCount = productsToSave.length;
+          console.log('✅ Termékek sikeresen mentve:', savedCount);
+        }
+      }
+
+      return { savedCount, skippedCount };
+    } catch (error) {
+      console.error('❌ Hiba a termékmentéskor:', error);
+      return { savedCount: 0, skippedCount: 0 };
+    }
+  };
+
   // Blokk adatok importálása bevásárlólistába
   const importReceiptToShoppingList = async () => {
     if (!scannedReceiptData || !user) {
@@ -928,6 +998,11 @@ const ShoppingScreen: React.FC = () => {
     try {
       setIsProcessingReceipt(true);
       console.log('📝 Blokk import kezdése...', scannedReceiptData);
+
+      // 🚀 AUTOMATIKUS TERMÉKMENTÉS
+      console.log('💾 Automatikus termékmentés indítása...');
+      const productSaveResult = await saveReceiptProductsToDatabase(scannedReceiptData);
+      console.log('📊 Termékmentés eredménye:', productSaveResult);
 
       // Új bevásárlólista létrehozása
       const listName = `Blokk import - ${scannedReceiptData.store || 'Ismeretlen bolt'}`;
@@ -962,16 +1037,16 @@ const ShoppingScreen: React.FC = () => {
         total_amount: newList.total_amount
       });
 
-      // Mentés adatbázisba
+      // Mentés adatbázisba a helyes mezőnevekkel (database.ts szerint)
       const { error } = await supabase
         .from('shopping_lists')
         .insert([{
           id: newList.id,
           user_id: newList.user_id,
           name: newList.name,
-          date: newList.date,
+          shopping_date: newList.date, // date → shopping_date
           items: newList.items,
-          total_amount: newList.total_amount,
+          estimated_total: newList.total_amount, // total_amount → estimated_total
           completed: newList.completed,
           created_at: newList.created_at,
         }]);
@@ -987,12 +1062,26 @@ const ShoppingScreen: React.FC = () => {
       // UI frissítése
       setShoppingLists(prev => [newList, ...prev]);
       
+      // Készítsd el az üzenetet a termékmentés eredményével
+      let message = `Bevásárlólista létrehozva "${listName}" néven ${shoppingItems.length} termékkel.`;
+      
+      if (productSaveResult.savedCount > 0 || productSaveResult.skippedCount > 0) {
+        message += `\n\n📦 Termékek adatbázisba:`;
+        if (productSaveResult.savedCount > 0) {
+          message += `\n✅ ${productSaveResult.savedCount} új termék mentve`;
+        }
+        if (productSaveResult.skippedCount > 0) {
+          message += `\n⏭️ ${productSaveResult.skippedCount} már létező termék kihagyva`;
+        }
+      }
+      
       Alert.alert(
         'Siker!', 
-        `Bevásárlólista létrehozva "${listName}" néven ${shoppingItems.length} termékkel.`,
+        message,
         [{ text: 'OK', onPress: () => {
           setIsReceiptScanModalVisible(false);
           setScannedReceiptData(null);
+          loadData(); // Termékek újratöltése
         }}]
       );
 
@@ -1144,6 +1233,28 @@ const ShoppingScreen: React.FC = () => {
           {formatCurrency(list.total_amount || 0)}
         </Text>
       </View>
+      
+      {/* Termékek előnézete árral */}
+      {list.items.length > 0 && (
+        <View style={styles.itemsPreview}>
+          <Text style={styles.itemsPreviewTitle}>Termékek:</Text>
+          {list.items.slice(0, 3).map((item, index) => (
+            <View key={item.id} style={styles.previewItem}>
+              <Text style={styles.previewItemName} numberOfLines={1}>
+                {item.name}
+              </Text>
+              <Text style={styles.previewItemPrice}>
+                {item.price ? formatCurrency(item.price) : 'Nincs ár'}
+              </Text>
+            </View>
+          ))}
+          {list.items.length > 3 && (
+            <Text style={styles.moreItemsText}>
+              ...és még {list.items.length - 3} termék
+            </Text>
+          )}
+        </View>
+      )}
     </TouchableOpacity>
   );
 
@@ -1806,14 +1917,23 @@ const ShoppingScreen: React.FC = () => {
                   </View>
 
                   <View style={styles.itemsList}>
-                    <Text style={styles.itemsTitle}>Termékek:</Text>
+                    <Text style={styles.itemsTitle}>🛒 Felismert termékek:</Text>
                     {scannedReceiptData.items.map((item, index) => (
                       <View key={item.id} style={styles.receiptItem}>
-                        <Text style={styles.receiptItemName}>{item.name}</Text>
-                        <Text style={styles.receiptItemDetails}>
-                          {item.quantity} {item.unit} × {item.price.toLocaleString()} Ft
-                        </Text>
-                        <Text style={styles.receiptItemCategory}>{item.category}</Text>
+                        <View style={styles.receiptItemHeader}>
+                          <Text style={styles.receiptItemName}>{item.name}</Text>
+                          <View style={styles.receiptItemCategory}>
+                            <Text style={styles.receiptCategoryText}>{item.category}</Text>
+                          </View>
+                        </View>
+                        <View style={styles.receiptItemFooter}>
+                          <Text style={styles.receiptItemDetails}>
+                            {item.quantity} {item.unit}
+                          </Text>
+                          <Text style={styles.receiptItemPrice}>
+                            {item.price.toLocaleString()} Ft
+                          </Text>
+                        </View>
                       </View>
                     ))}
                   </View>
@@ -2315,6 +2435,42 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     color: '#14B8A6',
+  },
+  itemsPreview: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+  },
+  itemsPreviewTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 6,
+  },
+  previewItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  previewItemName: {
+    fontSize: 11,
+    color: '#666',
+    flex: 1,
+    marginRight: 8,
+  },
+  previewItemPrice: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#14B8A6',
+  },
+  moreItemsText: {
+    fontSize: 10,
+    color: '#999',
+    fontStyle: 'italic',
+    marginTop: 4,
+    textAlign: 'center',
   },
   emptyState: {
     alignItems: 'center',
@@ -3085,21 +3241,45 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: '#14B8A6',
   },
+  receiptItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
   receiptItemName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 4,
+    flex: 1,
+    marginRight: 8,
   },
   receiptItemDetails: {
     fontSize: 14,
     color: '#666',
-    marginBottom: 2,
   },
   receiptItemCategory: {
-    fontSize: 12,
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  receiptCategoryText: {
+    fontSize: 11,
     color: '#14B8A6',
-    fontWeight: '500',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  receiptItemFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  receiptItemPrice: {
+    fontSize: 16,
+    color: '#14B8A6',
+    fontWeight: '700',
   },
   receiptActions: {
     flexDirection: 'row',
