@@ -22,7 +22,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Auto-login for testing purposes
+    // Auto-login for testing purposes - REMOVE IN PRODUCTION!
     const autoLogin = async () => {
       try {
         // Check if already logged in
@@ -37,11 +37,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        // Auto-login with test credentials
+        // Auto-login with test credentials - REPLACE WITH YOUR TEST CREDENTIALS
         console.log('Auto-logging in for testing...');
         const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
-          email: 'katsa007@gmail.com',
-          password: 'Kira2017',
+          email: 'your-test-email@example.com',
+          password: 'your-test-password',
         });
 
         if (loginError) {
@@ -50,26 +50,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        if (loginData.session) {
+        if (loginData.session && loginData.user) {
           setSession(loginData.session);
-          setUser(loginData.session.user);
-          await loadUserProfile(loginData.session.user.id);
+          setUser(loginData.user);
+          await loadUserProfile(loginData.user.id);
         }
-        
+
         setLoading(false);
-      } catch (error) {
-        console.error('Error in auto-login:', error);
+      } catch (err) {
+        console.error('Auto-login exception:', err);
         setLoading(false);
       }
     };
 
-    autoLogin();
+    // For production, use this instead:
+    // const initializeAuth = async () => {
+    //   const { data: { session }, error } = await supabase.auth.getSession();
+    //   if (session?.user) {
+    //     setSession(session);
+    //     setUser(session.user);
+    //     await loadUserProfile(session.user.id);
+    //   }
+    //   setLoading(false);
+    // };
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      try {
+    autoLogin();
+    // initializeAuth(); // Use this in production
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth state changed:', event, session?.user?.email);
         setSession(session);
         setUser(session?.user ?? null);
         
@@ -78,12 +88,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           setUserProfile(null);
         }
-        setLoading(false);
-      } catch (error) {
-        console.error('Error in auth state change:', error);
+        
         setLoading(false);
       }
-    });
+    );
 
     return () => subscription.unsubscribe();
   }, []);
@@ -91,42 +99,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadUserProfile = async (userId: string) => {
     try {
       const { data, error } = await supabase
-        .from('profiles')
+        .from('user_profiles')
         .select('*')
         .eq('id', userId)
         .single();
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 = No rows found
+      if (error && error.code !== 'PGRST116') {
         console.error('Error loading user profile:', error);
         return;
       }
 
-      if (data) {
-        setUserProfile(data);
-      }
-    } catch (error) {
-      console.error('Error loading user profile:', error);
+      setUserProfile(data);
+    } catch (err) {
+      console.error('Exception loading user profile:', err);
     }
   };
 
   const signIn = async (email: string, password: string) => {
     try {
-      console.log('Attempting sign in with:', email);
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-      console.log('Sign in response - data:', data, 'error:', error);
-      return { error };
-    } catch (error) {
-      console.error('Sign in catch error:', error);
-      return { error };
+
+      if (error) {
+        return { error };
+      }
+
+      return { error: null };
+    } catch (err) {
+      return { error: err };
     }
   };
 
   const signUp = async (email: string, password: string, fullName: string) => {
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -135,14 +143,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           },
         },
       });
-      return { error };
-    } catch (error) {
-      return { error };
+
+      if (error) {
+        return { error };
+      }
+
+      return { error: null };
+    } catch (err) {
+      return { error: err };
     }
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Sign out error:', err);
+    }
   };
 
   const value = {
@@ -155,7 +172,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signOut,
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
