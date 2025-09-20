@@ -34,6 +34,29 @@ npm install
 
 # Környezeti változók beállítása
 cp .env.example .env
+# Szerkeszd a .env fájlt a saját Supabase adataiddal
+
+# AuthContext beállítása fejlesztéshez
+cp context/AuthContext.example.tsx context/AuthContext.tsx
+# Szerkeszd az AuthContext.tsx fájlt a teszt felhasználóddal (opcionális)
+
+# Alkalmazás indítása
+npm start
+```
+
+### ⚠️ Fontos biztonsági megjegyzés
+
+Az `AuthContext.tsx` fájl automatikus bejelentkezést tartalmaz fejlesztési célokra. **SOHA ne commitold ezt a fájlt éles adatokkal!**
+
+1. A `context/AuthContext.tsx` fájl automatikusan ignorálva van a git által
+2. Használd a `context/AuthContext.example.tsx` template-et új környezet beállításához
+3. Éles környezetben távolítsd el az auto-login funkciót
+
+# Függőségek telepítése
+npm install
+
+# Környezeti változók beállítása
+cp .env.example .env
 # Szerkeszd a .env fájlt és add meg a Supabase adatokat
 
 # Alkalmazás indítása
