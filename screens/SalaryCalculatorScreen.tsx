@@ -10,20 +10,39 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { SalaryCalculator } from '../lib/salaryCalculator';
+import { SalaryCalculationInput } from '../types/salary';
+
+// 2025-ös bérszámítási kulcsok - BudgetScreen.tsx-ből másolva
+const KULCSOK = {
+  SZOCIALIS_HOZZAJARULAS: 0.135, // 13.5% (munkáltatói teher)
+  TB_JARULÉK: 0.185, // 18.5% (munkavállalói járulék)
+  NYUGDIJJARULÉK: 0.10, // 10% (500.000 Ft felett)
+  SZJA_KULCS: 0.15, // 15% (egységes kulcs)
+  ÖNKÉNTES_NYUGDIJ: 0.015, // 1.5% (dolgozói befizetés, adóalapot csökkenti)
+  MUSZAKPOTLEK: 0.45, // 45% (műszakpótlék - túlórára is vonatkozik)
+  TULORA_POTLEK: 0.00, // 0% (túlóra = 100% alapbér, NINCS extra túlórapótlék)
+  UNNEPNAPI_SZORZO: 1.0, // 100% (200%-hoz 100% hozzáadás)
+  BETEGSZABADSAG_SZAZALEK: 0.70, // 70%
+  GYED_NAPI: 13570, // GYED napi összeg 2025
+  KIKULDETESI_POTLEK: 6710, // Kiküldetési pótlék
+  ERDEKKÉPVISELETI_TAGDIJ_SZAZALEK: 0.007 // 0.7% (adóalapot csökkenti)
+};
 
 interface SalaryCalculation {
   grossSalary: number;
   netSalary: number;
   personalTax: number;
   socialSecurity: number;
-  healthInsurance: number;
-  unemploymentInsurance: number;
+  pensionContribution: number;
+  voluntaryPension: number;
+  unionFee: number;
   totalDeductions: number;
 }
 
 export default function SalaryCalculatorScreen({ navigation }: any) {
   const [grossSalary, setGrossSalary] = useState('400000');
-  const [workingDays, setWorkingDays] = useState('22');
+  const [workingDays, setWorkingDays] = useState('20');
   const [overtimeHours, setOvertimeHours] = useState('0');
   const [nightShiftHours, setNightShiftHours] = useState('0');
   const [familyAllowance, setFamilyAllowance] = useState('0');
@@ -31,57 +50,36 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
   const [calculation, setCalculation] = useState<SalaryCalculation | null>(null);
 
   const calculateSalary = () => {
-    const gross = parseFloat(grossSalary) || 0;
-    const overtime = parseFloat(overtimeHours) || 0;
-    const nightShift = parseFloat(nightShiftHours) || 0;
-    const allowance = parseFloat(familyAllowance) || 0;
+    const alapber = parseFloat(grossSalary) || 0;
+    const munkanapok = parseFloat(workingDays) || 20;
+    const tulora = parseFloat(overtimeHours) || 0;
+    const muszakpotlek = parseFloat(nightShiftHours) || 0;
+    const csaladi_kedv = parseFloat(familyAllowance) || 0;
+    const egyeb_jovedelem = parseFloat(otherIncome) || 0;
 
-    // Túlóra és műszakpótlék számítása (2025-ös értékek)
-    const hourlyRate = gross / 174; // Havi 174 óra átlag
-    const overtimePay = overtime * hourlyRate * 1.0; // 100% túlóra alapbér
-    const nightShiftPay = nightShift * hourlyRate * 1.45; // 145% műszakpótlék (100% + 45%)
+    // Készítsük el a bemenő adatokat a lib/salaryCalculator alapján
+    const input: SalaryCalculationInput = {
+      alapber: alapber,
+      ledolgozott_napok: munkanapok,
+      ledolgozott_orak: munkanapok * 8.1, // 8,1 óra/nap (magyar munkaügyi szabályozás)
+      tulora_orak: tulora,
+      muszakpotlek_orak: muszakpotlek,
+      formaruha_kompenzacio: egyeb_jovedelem,
+      csaladi_adokedvezmeny: csaladi_kedv,
+    };
 
-    const totalGross = gross + overtimePay + nightShiftPay + allowance;
-
-    // Magyar adózási rendszer 2025 (pontosabb számítás)
-    // TB járulék: 18.5% (maximum 1.200.000 Ft alapból)
-    const tbBase = Math.min(totalGross, 1200000);
-    const socialSecurity = tbBase * 0.185;
-    
-    // Nyugdíjjárulék: 10% (csak 500.000 Ft feletti bér esetén)
-    const pensionContribution = totalGross > 500000 ? (totalGross - 500000) * 0.10 : 0;
-    
-    // Önkéntes nyugdíjpénztár: 1.5% (adóalapot csökkenti)
-    const voluntaryPension = totalGross * 0.015;
-    
-    // Érdekképviseleti tagdíj: 0.7% (adóalapot csökkenti)
-    const unionFee = totalGross * 0.007;
-    
-    // SZJA alap = bruttó - TB járulék - nyugdíjjárulék - önkéntes nyugdíj
-    const taxBase = totalGross - socialSecurity - pensionContribution - voluntaryPension;
-    
-    // SZJA: 15% az SZJA alapból
-    const grossTax = Math.max(0, taxBase) * 0.15;
-    
-    // Általános adókedvezmény: 10.000 Ft
-    const personalTax = Math.max(0, grossTax - 10000);
-    
-    // Egészségügyi és munkanélküli járulék nem létezik 2025-ben
-    const healthInsurance = 0;
-    const unemploymentInsurance = 0;
-
-    // Összes levonás
-    const totalDeductions = personalTax + socialSecurity + pensionContribution + voluntaryPension + unionFee;
-    const netSalary = totalGross - totalDeductions;
+    // Számítsuk ki a bért a helyes kalkulátorral
+    const result = SalaryCalculator.calculateComplete(input);
 
     setCalculation({
-      grossSalary: totalGross,
-      netSalary,
-      personalTax,
-      socialSecurity,
-      healthInsurance,
-      unemploymentInsurance,
-      totalDeductions,
+      grossSalary: result.brutto_ber + (result.formaruha_kompenzacio || 0),
+      netSalary: result.netto_ber,
+      personalTax: result.szja,
+      socialSecurity: result.tb_jarulék,
+      pensionContribution: result.nyugdijjarulék,
+      voluntaryPension: result.onkentes_nyugdij,
+      unionFee: result.erdekKepv_tagdij,
+      totalDeductions: result.osszes_levonas,
     });
   };
 
@@ -160,7 +158,7 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Műszakpótlék (Ft)</Text>
+            <Text style={styles.inputLabel}>Műszakpótlék (óra)</Text>
             <TextInput
               style={styles.input}
               value={nightShiftHours}
@@ -171,7 +169,7 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>GYED munkavégzés melletti (Ft)</Text>
+            <Text style={styles.inputLabel}>Családi adókedvezmény (Ft)</Text>
             <TextInput
               style={styles.input}
               value={familyAllowance}
@@ -182,9 +180,11 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Formátum kompenzáció (Ft)</Text>
+            <Text style={styles.inputLabel}>Formaruha kompenzáció (Ft)</Text>
             <TextInput
               style={styles.input}
+              value={otherIncome}
+              onChangeText={setOtherIncome}
               placeholder="0"
               keyboardType="numeric"
             />
@@ -209,17 +209,17 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
               </View>
               {parseFloat(overtimeHours) > 0 && (
                 <View style={styles.detailItem}>
-                  <Text style={styles.detailLabel}>• Túlóra ({overtimeHours} óra): {formatCurrency((parseFloat(overtimeHours) || 0) * ((parseFloat(grossSalary) || 0) / 174) * 1.5)}</Text>
+                  <Text style={styles.detailLabel}>• Túlóra ({overtimeHours} óra): {formatCurrency((parseFloat(overtimeHours) || 0) * ((parseFloat(grossSalary) || 0) / (parseFloat(workingDays) * 8.1)) * 1.45)}</Text>
                 </View>
               )}
               {parseFloat(nightShiftHours) > 0 && (
                 <View style={styles.detailItem}>
-                  <Text style={styles.detailLabel}>• Műszakpótlék: {formatCurrency(parseFloat(nightShiftHours) || 0)}</Text>
+                  <Text style={styles.detailLabel}>• Műszakpótlék ({nightShiftHours} óra): {formatCurrency((parseFloat(nightShiftHours) || 0) * ((parseFloat(grossSalary) || 0) / (parseFloat(workingDays) * 8.1)) * 0.45)}</Text>
                 </View>
               )}
-              {parseFloat(familyAllowance) > 0 && (
+              {parseFloat(otherIncome) > 0 && (
                 <View style={styles.detailItem}>
-                  <Text style={styles.detailLabel}>• GYED melletti: {formatCurrency(parseFloat(familyAllowance) || 0)}</Text>
+                  <Text style={styles.detailLabel}>• Formaruha kompenzáció: {formatCurrency(parseFloat(otherIncome) || 0)}</Text>
                 </View>
               )}
             </View>
@@ -233,8 +233,22 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
                 <Text style={styles.deductionLabel}>TB járulék (18,5%)</Text>
                 <Text style={styles.deductionValue}>{formatCurrency(calculation.socialSecurity)}</Text>
               </View>
+              {calculation.pensionContribution > 0 && (
+                <View style={styles.deductionItem}>
+                  <Text style={styles.deductionLabel}>Nyugdíjjárulék (10%)</Text>
+                  <Text style={styles.deductionValue}>{formatCurrency(calculation.pensionContribution)}</Text>
+                </View>
+              )}
               <View style={styles.deductionItem}>
-                <Text style={styles.deductionLabel}>SZJA (15%)</Text>
+                <Text style={styles.deductionLabel}>Önkéntes nyugdíj (2%)</Text>
+                <Text style={styles.deductionValue}>{formatCurrency(calculation.voluntaryPension)}</Text>
+              </View>
+              <View style={styles.deductionItem}>
+                <Text style={styles.deductionLabel}>Érdekképviseleti tagdíj (0,5%)</Text>
+                <Text style={styles.deductionValue}>{formatCurrency(calculation.unionFee)}</Text>
+              </View>
+              <View style={styles.deductionItem}>
+                <Text style={styles.deductionLabel}>SZJA (15% - 10k Ft kedv.)</Text>
                 <Text style={styles.deductionValue}>{formatCurrency(calculation.personalTax)}</Text>
               </View>
             </View>
@@ -245,64 +259,9 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
               <Text style={styles.netAmount}>{formatCurrency(calculation.netSalary)}</Text>
               
               <View style={styles.netBreakdown}>
-                <Text style={styles.netLabel}>Nettó bér:</Text>
-                <Text style={styles.netValue}>{formatCurrency(calculation.netSalary)}</Text>
+                <Text style={styles.netLabel}>Nettó/bruttó arány:</Text>
+                <Text style={styles.netValue}>{((calculation.netSalary / calculation.grossSalary) * 100).toFixed(1)}%</Text>
               </View>
-              <View style={styles.netBreakdown}>
-                <Text style={styles.netLabel}>Egyéb jövedelem:</Text>
-                <Text style={styles.netValue}>{formatCurrency(parseFloat(otherIncome))}</Text>
-              </View>
-            </View>
-
-            {/* Teljes havi bevétel */}
-            <View style={styles.section}>
-              <View style={styles.monthlyIncomeContainer}>
-                <Text style={styles.monthlyIncomeTitle}>Teljes havi bevétel</Text>
-                <Text style={styles.monthlyIncomeAmount}>{formatCurrency(calculation.netSalary + parseFloat(otherIncome))}</Text>
-                
-                <View style={styles.monthlyIncomeBreakdown}>
-                  <View style={styles.monthlyIncomeRow}>
-                    <Text style={styles.monthlyIncomeLabel}>Nettó bér:</Text>
-                    <Text style={styles.monthlyIncomeValue}>{formatCurrency(calculation.netSalary)}</Text>
-                  </View>
-                  <View style={styles.monthlyIncomeRow}>
-                    <Text style={styles.monthlyIncomeLabel}>Egyéb jövedelem:</Text>
-                    <Text style={styles.monthlyIncomeValue}>{formatCurrency(parseFloat(otherIncome))}</Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-
-            {/* Egyéb jövedelmek */}
-            <View style={styles.section}>
-              <Text style={styles.sectionIcon}>🏠</Text>
-              <Text style={styles.sectionTitle}>Egyéb jövedelmek</Text>
-              
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Lakáskiadás</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="120000"
-                  keyboardType="numeric"
-                />
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Osztalék</Text>
-                <TextInput
-                  style={styles.input}
-                  value={otherIncome}
-                  onChangeText={setOtherIncome}
-                  placeholder="50000"
-                  keyboardType="numeric"
-                />
-              </View>
-            </View>
-
-            {/* Összes levonás */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Összes levonás</Text>
-              <Text style={styles.totalDeductionAmount}>{formatCurrency(calculation.totalDeductions)}</Text>
             </View>
 
             {/* Munkáltatói terhek */}
@@ -310,12 +269,16 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
               <Text style={styles.sectionTitle}>MUNKÁLTATÓI TERHEK</Text>
               
               <View style={styles.employerCostItem}>
-                <Text style={styles.employerCostLabel}>Szociális hozzájárulás (13%)</Text>
-                <Text style={styles.employerCostValue}>{formatCurrency(calculation.grossSalary * 0.13)}</Text>
+                <Text style={styles.employerCostLabel}>Szociális hozzájárulás (13,5%)</Text>
+                <Text style={styles.employerCostValue}>{formatCurrency(calculation.grossSalary * 0.135)}</Text>
               </View>
               <View style={styles.employerCostItem}>
                 <Text style={styles.employerCostLabel}>Teljes munkáltatói költség</Text>
-                <Text style={styles.employerCostValue}>{formatCurrency(calculation.grossSalary * 1.13)}</Text>
+                <Text style={styles.employerCostValue}>{formatCurrency(calculation.grossSalary * 1.135)}</Text>
+              </View>
+              <View style={styles.employerCostItem}>
+                <Text style={styles.employerCostLabel}>Munkáltatói teher aránya</Text>
+                <Text style={styles.employerCostValue}>13,5%</Text>
               </View>
             </View>
 

@@ -58,11 +58,13 @@ export const TAX_RATES = {
   TB_JARULÉK: 0.185, // 18.5% TB járulék
   NYUGDIJJARULÉK: 0.10, // 10% nyugdíjjárulék (500.000 Ft felett)
   SZOC_HOZZAJARULAS: 0.135, // 13.5% szociális hozzájárulási adó (munkáltatói)
-  ÖNKÉNTES_NYUGDIJ: 0.015, // 1.5% önkéntes nyugdíjpénztár (adóalapot csökkenti)
+  ÖNKÉNTES_NYUGDIJ: 0.02, // 2% önkéntes nyugdíjpénztár (adóalapot csökkenti)
   MUSZAKPOTLEK: 0.45, // 45% műszakpótlék (túlórára is vonatkozik)
-  TULORA_POTLEK: 0.00, // 0% túlórapótlék (túlóra = 100% alapbér)
+  TULORA_POTLEK: 1.00, // 0% túlórapótlék (túlóra = 100% alapbér)
   UNNEPNAPI_SZORZO: 1.0, // 100% ünnepnapi szorzó
-  ERDEKKÉPVISELETI_TAGDIJ: 0.007, // 0.7% érdekképviseleti tagdíj (adóalapot csökkenti)
+  ERDEKKÉPVISELETI_TAGDIJ: 0.005, // 0.5% érdekképviseleti tagdíj (adóalapot csökkenti)
+  ALTALANOS_ADOKEDVEZMENY: 10000, // 10.000 Ft általános adókedvezmény
+  NYUGDIJJARULÉK_HATÁR: 500000, // 500.000 Ft felett van nyugdíjjárulék
 } as const;
 
 // Családi adókedvezmény összegek

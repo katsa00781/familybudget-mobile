@@ -1,3 +1,4 @@
+import 'react-native-get-random-values';
 import * as FileSystem from 'expo-file-system';
 
 // Típusok
@@ -90,54 +91,37 @@ const processWithGPT4Vision = async (imageUri: string): Promise<ReceiptData> => 
       messages: [
         {
           role: 'system',
-          content: `Feladat: Értelmezd a csatolt blokkról készült fényképet, és készíts strukturált JSON listát a rajta szereplő termékekről.
+      content: `Magyar áruházi blokk (pl. ALDI, LIDL, SPAR, TESCO) terméksorainak kinyerése. Feladat: minden valós termék, ár, egység, kategória, márka, bolt neve, dátum kinyerése strukturált JSON listába.
 
-FORMÁTUM - Pontosan ezt a JSON struktúrát használd:
-{
-  "items": [
-    {
-      "name": "TERMÉK MEGNEVEZÉSE",
-      "brand": "MÁRKA",
-      "category": "KATEGÓRIA", 
-      "price": 450,
-      "unit": "MÉRTÉKEGYSÉG"
-    }
-  ],
-  "store_name": "ÁRUHÁZ NEVE",
-  "total": 1250,
-  "date": "2025.07.26"
-}
+Kimenet: csak JSON tömb, minden terméksor külön elem, például:
+[
+  {
+    "name": "Tejföl 20%",
+    "brand": "",
+    "category": "Tejtermékek",
+    "store": "Aldi",
+    "price": 399,
+    "unit": "330 g"
+  },
+  {
+    "name": "Csirkemellfilé",
+    "brand": "",
+    "category": "Húsáruk",
+    "store": "Aldi",
+    "price": 1399,
+    "unit": "500 g"
+  }
+]
 
-TERMÉK MEZŐK:
-• "name" – a termék megnevezése, emberi értelemmel kiegészítve vagy javítva (pl. "Pöttyös0%tejsüti20" → "Pöttyös tejdesszert")
-• "brand" – márka (ha van feltüntetve, különben null)
-• "category" – becsült kategória: "Tejtermékek", "Pékáruk", "Hús és hal", "Zöldség és gyümölcs", "Édességek", "Italok", "Háztartás", "Egyéb"
-• "price" – a termék ára forintban, egész számként (int)
-• "unit" – mennyiség mértékegységgel együtt, pl. "250 g", "1.5 l", "db", "1.08 kg"
-
-GLOBÁLIS MEZŐK:
-• "store_name" – áruház neve (TESCO, ALDI, LIDL, SPAR, CBA, COOP, PENNY, AUCHAN)
-• "total" – végösszeg forintban
-• "date" – dátum ÉÉÉÉ.HH.NN formátumban
-
-🇭🇺 MAGYAR OCR HIBAJAVÍTÁSOK:
-• 0 → O: "TEJF0L" → "TEJFÖL"
-• 1 → I: "K1NYÉR" → "KENYÉR"  
-• 3 → E: "K3NYÉR" → "KENYÉR"
-• 4 → A: "P4RADICSOM" → "PARADICSOM"
-• 5 → S: "5ONKA" → "SONKA"
-• 6 → G: "JO6HURT" → "JOGHURT"
-• 8 → B: "KOL8ÁSZ" → "KOLBÁSZ"
-
-⚠️ FONTOS SZABÁLYOK:
-• Karakterhibás vagy rövidítésekkel teli neveket javítsd emberileg értelmes névvé
-• Ha nem állapítható meg pontosan, tippelj logikusan
-• NE tartalmazza a végösszeget, fizetési információt, visszaváltást vagy nem terméktípusú sorokat a terméklistában
-• Csak a nyugtán LÁTHATÓ termékeket dolgozd fel
-• NE találj ki semmit
-• Árak eredeti forint értékben (pl. 450 Ft = 450)
-
-KIMENET: Csak tiszta JSON, semmi más szöveg vagy magyarázat!`
+Elvárások:
+- Csak valós termékek, ne legyenek benne fizetési, visszaváltási, végösszeg sorok.
+- A termékneveket javítsd emberileg olvashatóra, rövidítéseket fejtsd ki.
+- Ha van márka, külön mezőbe írd, ha nincs, maradhat üresen.
+- Kategóriák: "Tejtermékek", "Pékáruk", "Húsáruk", "Zöldség-Gyümölcs", "Édesség", "Ital", "Háztartás", "Egyéb".
+- Bolt nevét a blokk alapján add meg (pl. "Aldi").
+- Dátumot ne adj vissza, csak ha egyértelműen szerepel.
+- Minden termék külön sor legyen, mennyiség mindig 1.
+- Ne adj magyarázatot, csak a JSON tömböt!`
         },
         {
           role: 'user',
@@ -199,23 +183,50 @@ Válaszolj CSAK JSON-nal, semmi más!`
 
   // JSON parse és validáció
   try {
-    const jsonStart = content.indexOf('{');
-    const jsonEnd = content.lastIndexOf('}') + 1;
-    
-    if (jsonStart === -1 || jsonEnd === 0) {
-      throw new Error('Nem található JSON a válaszban');
+    // Közvetlen JSON tömb vagy objektum keresése
+    let jsonStr = '';
+    // Próbáljuk meg a legelső '['-től a legutolsó ']'-ig kivágni a JSON tömböt
+    const arrStart = content.indexOf('[');
+    const arrEnd = content.lastIndexOf(']') + 1;
+    if (arrStart !== -1 && arrEnd > arrStart) {
+      jsonStr = content.substring(arrStart, arrEnd);
+    } else {
+      // Ha nincs tömb, próbáljuk meg az objektumot
+      const objStart = content.indexOf('{');
+      const objEnd = content.lastIndexOf('}') + 1;
+      if (objStart === -1 || objEnd === 0) {
+        throw new Error('Nem található JSON a válaszban');
+      }
+      jsonStr = content.substring(objStart, objEnd);
     }
-    
-    const jsonStr = content.substring(jsonStart, jsonEnd);
-    const parsedData = JSON.parse(jsonStr);
-    
-    // Adatok validálása és javítása
-    const items: ReceiptItem[] = (parsedData.items || []).map((item: any, index: number) => ({
-      id: `gpt4_${index}_${Date.now()}`,
+    // Tisztítsuk meg a jsonStr-t, ha a végén van extra karakter
+    jsonStr = jsonStr.trim();
+    // Próbáljuk meg parse-olni
+    let parsedData;
+    try {
+      parsedData = JSON.parse(jsonStr);
+    } catch (e) {
+      // Fallback: próbáljuk meg regex-szel kivágni a tömböt
+      const match = content.match(/\[.*\]/s);
+      if (match) {
+        try {
+          parsedData = JSON.parse(match[0]);
+        } catch (e2) {
+          throw new Error('Nem sikerült JSON tömböt parse-olni (regex fallback)');
+        }
+      } else {
+        throw new Error('Nem sikerült JSON tömböt kivágni a válaszból');
+      }
+    }
+
+    // Ha tömb, akkor közvetlenül feldolgozzuk
+    const itemsRaw = Array.isArray(parsedData) ? parsedData : (parsedData.items || []);
+    const items: ReceiptItem[] = itemsRaw.map((item: any, index: number) => ({
+      id: `item_${Date.now()}_${Math.floor(Math.random() * 10000)}_${index}`,
       name: postProcessProductName(item.name || 'Ismeretlen termék'),
-      quantity: parseQuantityFromUnit(item.unit) || 1, // Extract quantity from unit if present
-      unit: validateUnit(extractUnit(item.unit)) || 'db',
-      price: Math.max(item.price || 0, 1), // Min 1 Ft
+      quantity: 1, // Mennyiség mindig 1, minden sor külön tétel
+      unit: validateUnit(extractUnit(item.unit)) || item.unit || 'db',
+      price: Math.max(item.price || 0, 1),
       category: validateCategory(item.category) || 'Egyéb',
       checked: false
     }));
@@ -224,16 +235,21 @@ Válaszolj CSAK JSON-nal, semmi más!`
       throw new Error('Nincs feldolgozható termék');
     }
 
+    // Store name (mindig Aldi, de ha van, vegyük ki az elsőből)
+    let store = 'Ismeretlen üzlet';
+    if (itemsRaw.length > 0 && itemsRaw[0].store_name) {
+      store = itemsRaw[0].store_name;
+    }
+
     const result: ReceiptData = {
       items,
-      total: parsedData.total || items.reduce((sum, item) => sum + (item.price * item.quantity), 0),
-      date: parsedData.date || new Date().toLocaleDateString('hu-HU'),
-      store: parsedData.store_name || parsedData.store || 'Ismeretlen üzlet' // Handle both formats
+      total: items.reduce((sum, item) => sum + (item.price * item.quantity), 0),
+      date: new Date().toLocaleDateString('hu-HU'),
+      store
     };
 
     console.log(`✅ GPT-4 Vision parsing: ${result.items.length} termék, ${result.total} Ft összesen`);
     return result;
-    
   } catch (parseError) {
     console.error('❌ GPT-4 Vision JSON parse hiba:', parseError);
     console.log('❌ Eredeti válasz:', content);

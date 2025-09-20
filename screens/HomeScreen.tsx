@@ -11,6 +11,8 @@ import {
   SafeAreaView,
   Alert,
   RefreshControl,
+  Modal,
+  FlatList,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -68,11 +70,32 @@ interface CategoryData {
   color: string;
 }
 
+interface ShoppingItem {
+  id: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  price: number;
+  category: string;
+  checked: boolean;
+}
+
+interface ShoppingList {
+  id: string;
+  name: string;
+  items: ShoppingItem[];
+  created_at: string;
+  completed: boolean;
+}
+
 export default function HomeScreen({ navigation }: any) {
   const { user, userProfile } = useAuth();
   const [budgetPlans, setBudgetPlans] = useState<BudgetPlan[]>([]);
   const [incomePlans, setIncomePlans] = useState<IncomePlan[]>([]);
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
+  const [shoppingLists, setShoppingLists] = useState<ShoppingList[]>([]);
+  const [currentShoppingList, setCurrentShoppingList] = useState<ShoppingList | null>(null);
+  const [showShoppingModal, setShowShoppingModal] = useState(false);
   const [dashboardStats, setDashboardStats] = useState<DashboardStats>({
     totalBalance: 0,
     monthlyIncome: 0,
@@ -164,6 +187,39 @@ export default function HomeScreen({ navigation }: any) {
       }
       
       setSavingsGoals(savingsData || []);
+
+      // Bevásárlólisták betöltése
+      const { data: shoppingData, error: shoppingError } = await supabase
+        .from('shopping_lists')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('completed', false)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (shoppingError) {
+        console.warn('Shopping lists error:', shoppingError);
+      } else if (shoppingData && shoppingData.length > 0) {
+        const rawList = shoppingData[0];
+        try {
+          const parsedItems = typeof rawList.items === 'string' 
+            ? JSON.parse(rawList.items) 
+            : rawList.items || [];
+          
+          const shoppingList: ShoppingList = {
+            id: rawList.id,
+            name: rawList.name,
+            items: parsedItems,
+            created_at: rawList.created_at,
+            completed: rawList.completed
+          };
+          
+          setShoppingLists([shoppingList]);
+          setCurrentShoppingList(shoppingList);
+        } catch (error) {
+          console.warn('Error parsing shopping list items:', error);
+        }
+      }
 
       // Számítások
       const currentBudget = budgetData?.[0];
@@ -276,8 +332,51 @@ export default function HomeScreen({ navigation }: any) {
     </TouchableOpacity>
   );
 
-  const navigateToTransactions = () => {
-    Alert.alert('Fejlesztés alatt', 'Ez a funkció nem érhető el a webes verzióban.');
+  const navigateToShopping = () => {
+    if (currentShoppingList && currentShoppingList.items.length > 0) {
+      setShowShoppingModal(true);
+    } else {
+      Alert.alert('Nincs aktív lista', 'Nincs aktív bevásárlólistád. Hozz létre egyet a Bevásárlás menüpontban!');
+    }
+  };
+
+  const toggleShoppingItem = async (itemId: string) => {
+    if (!currentShoppingList) return;
+    
+    const updatedItems = currentShoppingList.items.map(item =>
+      item.id === itemId ? { ...item, checked: !item.checked } : item
+    );
+    
+    const updatedList = { ...currentShoppingList, items: updatedItems };
+    setCurrentShoppingList(updatedList);
+    
+    // Update in database
+    try {
+      await supabase
+        .from('shopping_lists')
+        .update({ items: JSON.stringify(updatedItems) })
+        .eq('id', currentShoppingList.id);
+    } catch (error) {
+      console.error('Error updating shopping item:', error);
+    }
+  };
+
+  const completeShoppingList = async () => {
+    if (!currentShoppingList) return;
+    
+    try {
+      await supabase
+        .from('shopping_lists')
+        .update({ completed: true })
+        .eq('id', currentShoppingList.id);
+      
+      setShowShoppingModal(false);
+      setCurrentShoppingList(null);
+      Alert.alert('Siker', 'Bevásárlólista befejezve!');
+    } catch (error) {
+      console.error('Error completing shopping list:', error);
+      Alert.alert('Hiba', 'Nem sikerült befejezni a bevásárlólistát');
+    }
   };
 
   const navigateToFamilyMembers = () => {
@@ -355,7 +454,7 @@ export default function HomeScreen({ navigation }: any) {
           <View style={styles.quickActionsContainer}>
             <Text style={styles.sectionTitle}>Gyors műveletek</Text>
             <View style={styles.quickActionsGrid}>
-              {renderQuickAction('Tranzakció', 'add-circle', '#14B8A6', navigateToTransactions)}
+              {renderQuickAction('Bevásárlás', 'basket', '#14B8A6', navigateToShopping)}
               {renderQuickAction('Költségvetés', 'calculator', '#8B5CF6', navigateToBudget)}
               {renderQuickAction('Megtakarítás', 'wallet', '#F59E0B', navigateToSavings)}
               {renderQuickAction('Családtagok', 'people', '#EC4899', navigateToFamilyMembers)}
@@ -391,6 +490,62 @@ export default function HomeScreen({ navigation }: any) {
           )}
         </ScrollView>
       </SafeAreaView>
+
+      {/* Shopping List Modal */}
+      <Modal
+        visible={showShoppingModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowShoppingModal(false)}>
+              <Ionicons name="close" size={24} color="#333" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>
+              {currentShoppingList?.name || 'Bevásárlólista'}
+            </Text>
+            <TouchableOpacity onPress={completeShoppingList}>
+              <Text style={styles.completeButton}>Befejez</Text>
+            </TouchableOpacity>
+          </View>
+          
+          <FlatList
+            data={currentShoppingList?.items || []}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[styles.shoppingItem, item.checked && styles.shoppingItemChecked]}
+                onPress={() => toggleShoppingItem(item.id)}
+              >
+                <View style={[styles.itemCheckbox, item.checked && styles.itemChecked]}>
+                  {item.checked && <Ionicons name="checkmark" size={16} color="white" />}
+                </View>
+                <View style={styles.itemInfo}>
+                  <Text style={[styles.itemName, item.checked && styles.itemNameChecked]}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.itemDetails}>
+                    {item.quantity} {item.unit} • {formatCurrency(item.price * item.quantity)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
+            keyExtractor={item => item.id}
+            style={styles.shoppingList}
+            contentContainerStyle={styles.shoppingListContent}
+          />
+          
+          {currentShoppingList && (
+            <View style={styles.totalContainer}>
+              <Text style={styles.totalText}>
+                Összes: {formatCurrency(
+                  currentShoppingList.items.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+                )}
+              </Text>
+            </View>
+          )}
+        </SafeAreaView>
+      </Modal>
     </LinearGradient>
   );
 }
@@ -559,5 +714,95 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     color: '#14B8A6',
+  },
+  // Shopping Modal Styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  completeButton: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#14B8A6',
+  },
+  shoppingList: {
+    flex: 1,
+  },
+  shoppingListContent: {
+    padding: 16,
+  },
+  shoppingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  shoppingItemChecked: {
+    backgroundColor: '#f0f9ff',
+    opacity: 0.7,
+  },
+  itemCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#ddd',
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  itemChecked: {
+    backgroundColor: '#14B8A6',
+    borderColor: '#14B8A6',
+  },
+  itemInfo: {
+    flex: 1,
+  },
+  itemName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 4,
+  },
+  itemNameChecked: {
+    textDecorationLine: 'line-through',
+    color: '#999',
+  },
+  itemDetails: {
+    fontSize: 14,
+    color: '#666',
+  },
+  totalContainer: {
+    padding: 16,
+    backgroundColor: 'white',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  totalText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
   },
 });

@@ -56,11 +56,11 @@ export interface Transaction {
 
 export interface Product {
   id: string;
+  user_id: string;
   name: string;
   category: string;
   unit: string;
-  price: number; // Changed from average_price to price to match web app database
-  barcode?: string;
+  price: number;
   description?: string;
   created_at: string;
   updated_at: string;
@@ -83,15 +83,25 @@ export interface ShoppingItem {
 export interface ShoppingList {
   id: string;
   user_id: string;
-  family_id?: string;
   name: string;
-  description?: string;
-  date: string; // Fixed: use 'date' instead of 'shopping_date' to match actual database
-  store_name?: string;
-  items: ShoppingItem[];
-  total_amount: number; // Fixed: use 'total_amount' instead of 'estimated_total' to match actual database
-  actual_total?: number;
+  date: string; // YYYY-MM-DD
+  total_amount: number;
+  items: string; // JSON string
   completed: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface ShoppingStatistics {
+  id: string;
+  user_id: string;
+  shopping_list_id: string;
+  shopping_date: string; // YYYY-MM-DD
+  product_name: string;
+  product_category: string;
+  quantity: number;
+  unit: string;
+  unit_price: number;
+  total_price: number;
+  created_at: string;
 }

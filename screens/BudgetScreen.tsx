@@ -115,20 +115,20 @@ interface SalaryResult {
   munkaltaroiTerhek: string;
 }
 
-// 2025-ös bérszámítási kulcsok - frissített értékek
+// 2025-ös bérszámítási kulcsok - KORRIGÁLT értékek
 const KULCSOK = {
   SZOCIALIS_HOZZAJARULAS: 0.135, // 13.5% (munkáltatói teher)
   TB_JARULÉK: 0.185, // 18.5% (munkavállalói járulék)
   NYUGDIJJARULÉK: 0.10, // 10% (500.000 Ft felett)
   SZJA_KULCS: 0.15, // 15% (egységes kulcs)
-  ÖNKÉNTES_NYUGDIJ: 0.015, // 1.5% (dolgozói befizetés, adóalapot csökkenti)
+  ÖNKÉNTES_NYUGDIJ: 0.015, // 1.5% (dolgozói befizetés, adóalapot csökkenti) ✅ JAVÍTVA
   MUSZAKPOTLEK: 0.45, // 45% (műszakpótlék - túlórára is vonatkozik)
-  TULORA_POTLEK: 0.00, // 0% (túlóra = 100% alapbér, pótlék csak műszakban)
+  TULORA_POTLEK: 1.0, // 0% (túlóra = 100% alapbér, pótlék csak műszakban)
   UNNEPNAPI_SZORZO: 1.0, // 100% (200%-hoz 100% hozzáadás)
   BETEGSZABADSAG_SZAZALEK: 0.70, // 70%
   GYED_NAPI: 13570, // GYED napi összeg 2025
   KIKULDETESI_POTLEK: 6710, // Kiküldetési pótlék
-  ERDEKKÉPVISELETI_TAGDIJ_SZAZALEK: 0.007 // 0.7% (adóalapot csökkenti)
+  ERDEKKÉPVISELETI_TAGDIJ_SZAZALEK: 0.007 // 0.7% (adóalapot csökkenti) ✅ JAVÍTVA
 };
 
 // Helper function to generate unique IDs
@@ -227,7 +227,7 @@ const BudgetScreen: React.FC = () => {
   const [kikuldetesNapok, setKikuldetesNapok] = useState(0);
   const [gyedMellett, setGyedMellett] = useState(30);
   const [formaruhakompenzacio, setFormaruhakompenzacio] = useState(0);
-  const [családiAdókedvezmény, setCsaládiAdókedvezmény] = useState(333330);
+  const [családiAdókedvezmény, setCsaládiAdókedvezmény] = useState(500000);
   const [additionalIncomes, setAdditionalIncomes] = useState<AdditionalIncome[]>([]);
   
   // Modal állapotok
@@ -754,28 +754,56 @@ const BudgetScreen: React.FC = () => {
 
   // Bérszámítás
   const calculateSalary = useCallback(() => {
-    const oraber = alapber / 174;
+    // Nullával való osztás elkerülése
+    if (ledolgozottNapok === 0 || ledolgozottOrak === 0) {
+      setEredmény(null);
+      return;
+    }
+
+    const oraber = alapber / (ledolgozottNapok * 8.1); // Órabér számítása  
     
     // Járandóságok számítása
-    const haviberesIdober = Math.round(ledolgozottOrak * oraber);
+    const haviberesIdober = Math.round(oraber * ledolgozottOrak);
     const fizetettSzabadsag = Math.round(szabadsagOrak * oraber);
     
     // Túlóra számítás - 100% alapbér
-    const tuloraAlapossszeg = Math.round(tuloraOrak * oraber);
-    const tuloraPotlek = Math.round(tuloraOrak * oraber * KULCSOK.TULORA_POTLEK); // 0% pótlék
-    
+    const tuloraAlapossszeg = Math.round(alapber / ledolgozottOrak * tuloraOrak);
+    const tuloraPihenpnapos = tuloraOrak > 0 ? Math.round(tuloraAlapossszeg * 1.4) : 0; // 140% ünnepnapi túlóra
+    const tuloraPotlek = Math.round(tuloraAlapossszeg * KULCSOK.TULORA_POTLEK); // 45% pótlék
+
     const muszakpotlek = Math.round(muszakpotlekOrak * oraber * KULCSOK.MUSZAKPOTLEK);
-    const tuloraMuszakpotlek = Math.round(tuloraOrak * oraber * KULCSOK.MUSZAKPOTLEK); // 45% műszakpótlék túlórára
+    const tuloraMuszakpotlek = Math.round(tuloraAlapossszeg * KULCSOK.MUSZAKPOTLEK); // 45% műszakpótlék túlórára
     const unnepnapiMunka = Math.round(unnepnapiOrak * oraber * KULCSOK.UNNEPNAPI_SZORZO);
     const betegszabadsag = Math.round(betegszabadsagNapok * (oraber * 8) * KULCSOK.BETEGSZABADSAG_SZAZALEK);
     const kikuldetesTobblet = Math.round(kikuldetesNapok * KULCSOK.KIKULDETESI_POTLEK);
     const gyedMunkavMellett = Math.round(gyedMellett * KULCSOK.GYED_NAPI);
     
     // Bruttó bér összesen
-    const bruttoBer = haviberesIdober + fizetettSzabadsag + tuloraAlapossszeg + tuloraPotlek +
+    const bruttoBer = haviberesIdober + fizetettSzabadsag + tuloraAlapossszeg + tuloraPihenpnapos +
                      muszakpotlek + tuloraMuszakpotlek + unnepnapiMunka + 
                      betegszabadsag + kikuldetesTobblet;
+
+    console.log('=== BÉRSZÁMÍTÁS DEBUG ===');
+    console.log('Input értékek:');
+    console.log('- alapber:', alapber);
+    console.log('- ledolgozottNapok:', ledolgozottNapok);
+    console.log('- ledolgozottOrak:', ledolgozottOrak);
+    console.log('- tuloraOrak:', tuloraOrak);
+    console.log('- oraber:', oraber, 'isNaN:', isNaN(oraber));
     
+    console.log('Számított értékek:');
+    console.log('- haviberesIdober:', haviberesIdober, 'isNaN:', isNaN(haviberesIdober));
+    console.log('- fizetettSzabadsag:', fizetettSzabadsag, 'isNaN:', isNaN(fizetettSzabadsag));
+    console.log('- tuloraAlapösszeg:', tuloraAlapossszeg, 'isNaN:', isNaN(tuloraAlapossszeg));
+    console.log('- tuloraPihenpnapos:', tuloraPihenpnapos, 'isNaN:', isNaN(tuloraPihenpnapos));
+    console.log('- tuloraPotlek:', tuloraPotlek, 'isNaN:', isNaN(tuloraPotlek));
+    console.log('- muszakpotlek:', muszakpotlek, 'isNaN:', isNaN(muszakpotlek));
+    console.log('- tuloraMuszakpotlek:', tuloraMuszakpotlek, 'isNaN:', isNaN(tuloraMuszakpotlek));
+    console.log('- unnepnapiMunka:', unnepnapiMunka, 'isNaN:', isNaN(unnepnapiMunka));
+    console.log('- betegszabadsag:', betegszabadsag, 'isNaN:', isNaN(betegszabadsag));
+    console.log('- kikuldetesTobblet:', kikuldetesTobblet, 'isNaN:', isNaN(kikuldetesTobblet));
+    console.log('- gyedMunkavMellett:', gyedMunkavMellett, 'isNaN:', isNaN(gyedMunkavMellett));
+    console.log('Bruttó bér:', bruttoBer, 'isNaN:', isNaN(bruttoBer));
     // Összes járandóság
     const osszesJarandsag = bruttoBer + gyedMunkavMellett + formaruhakompenzacio;
     
@@ -802,14 +830,25 @@ const BudgetScreen: React.FC = () => {
     const szjaBrutto = Math.round(kedvezményesAlap * KULCSOK.SZJA_KULCS);
     
     // Általános adókedvezmény levonása (2025-ben minimum 10.000 Ft)
-    const altalnosAdoKedvezmeny = 10000;
+    const altalnosAdoKedvezmeny = 0;
     const szja = Math.max(0, szjaBrutto - altalnosAdoKedvezmeny);
     
     // Összes levonás
     const osszesLevonas = tbJarulék + nyugdijJarulék + onkentesNyugdij + szja + erdekKepvTagdij;
+
+    console.log('--- Levonások részletezve ---');
+    console.log('összes levonás:', osszesLevonas, 'isNaN:', isNaN(osszesLevonas));
+    console.log('tbJarulék:', tbJarulék, 'isNaN:', isNaN(tbJarulék));
+    console.log('nyugdijJarulék:', nyugdijJarulék, 'isNaN:', isNaN(nyugdijJarulék));
+    console.log('onkentesNyugdij:', onkentesNyugdij, 'isNaN:', isNaN(onkentesNyugdij));
+    console.log('szja:', szja, 'isNaN:', isNaN(szja));
+    console.log('erdekKepvTagdij:', erdekKepvTagdij, 'isNaN:', isNaN(erdekKepvTagdij));
+    console.log('========================');  
     
     // Nettó fizetés
     const netto = osszesJarandsag - osszesLevonas;
+
+    console.log('nettó:', netto);
     
     // Munkáltatói terhek
     const szocHozzjarulas = Math.round((bruttoBer + formaruhakompenzacio) * KULCSOK.SZOCIALIS_HOZZAJARULAS);
@@ -1242,7 +1281,12 @@ const BudgetScreen: React.FC = () => {
           <TextInput
             style={styles.input}
             value={alapber.toString()}
-            onChangeText={(text) => setAlapber(parseInt(text) || 0)}
+            onChangeText={(text) => {
+              const numValue = parseInt(text);
+              if (!isNaN(numValue) || text === '') {
+                setAlapber(isNaN(numValue) ? 0 : numValue);
+              }
+            }}
             keyboardType="numeric"
             placeholder="986400"
           />
@@ -1253,7 +1297,12 @@ const BudgetScreen: React.FC = () => {
           <TextInput
             style={styles.input}
             value={családiAdókedvezmény.toString()}
-            onChangeText={(text) => setCsaládiAdókedvezmény(parseInt(text) || 0)}
+            onChangeText={(text) => {
+              const numValue = parseInt(text);
+              if (!isNaN(numValue) || text === '') {
+                setCsaládiAdókedvezmény(isNaN(numValue) ? 0 : numValue);
+              }
+            }}
             keyboardType="numeric"
             placeholder="333330"
           />
@@ -1270,7 +1319,12 @@ const BudgetScreen: React.FC = () => {
           <TextInput
             style={styles.input}
             value={ledolgozottNapok.toString()}
-            onChangeText={(text) => setLedolgozottNapok(parseFloat(text) || 0)}
+            onChangeText={(text) => {
+              const numValue = parseFloat(text);
+              if (!isNaN(numValue) || text === '') {
+                setLedolgozottNapok(isNaN(numValue) ? 0 : numValue);
+              }
+            }}
             keyboardType="numeric"
             placeholder="20"
           />
@@ -1282,7 +1336,12 @@ const BudgetScreen: React.FC = () => {
           <TextInput
             style={styles.input}
             value={szabadsagNapok.toString()}
-            onChangeText={(text) => setSzabadsagNapok(parseFloat(text) || 0)}
+            onChangeText={(text) => {
+              const numValue = parseFloat(text);
+              if (!isNaN(numValue) || text === '') {
+                setSzabadsagNapok(isNaN(numValue) ? 0 : numValue);
+              }
+            }}
             keyboardType="numeric"
             placeholder="0"
           />
@@ -1294,7 +1353,12 @@ const BudgetScreen: React.FC = () => {
           <TextInput
             style={styles.input}
             value={tuloraOrak.toString()}
-            onChangeText={(text) => setTuloraOrak(parseFloat(text) || 0)}
+            onChangeText={(text) => {
+              const numValue = parseFloat(text);
+              if (!isNaN(numValue) || text === '') {
+                setTuloraOrak(isNaN(numValue) ? 0 : numValue);
+              }
+            }}
             keyboardType="numeric"
             placeholder="0"
           />

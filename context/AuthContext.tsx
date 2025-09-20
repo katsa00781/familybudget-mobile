@@ -22,21 +22,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (error) {
-        console.error('Error getting session:', error);
+    // Auto-login for testing purposes
+    const autoLogin = async () => {
+      try {
+        // Check if already logged in
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (session?.user) {
+          // Already logged in
+          setSession(session);
+          setUser(session.user);
+          await loadUserProfile(session.user.id);
+          setLoading(false);
+          return;
+        }
+
+        // Auto-login with test credentials
+        console.log('Auto-logging in for testing...');
+        const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
+          email: 'katsa007@gmail.com',
+          password: 'Kira2017',
+        });
+
+        if (loginError) {
+          console.error('Auto-login error:', loginError);
+          setLoading(false);
+          return;
+        }
+
+        if (loginData.session) {
+          setSession(loginData.session);
+          setUser(loginData.session.user);
+          await loadUserProfile(loginData.session.user.id);
+        }
+        
+        setLoading(false);
+      } catch (error) {
+        console.error('Error in auto-login:', error);
+        setLoading(false);
       }
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        loadUserProfile(session.user.id);
-      }
-      setLoading(false);
-    }).catch((error) => {
-      console.error('Error in getSession:', error);
-      setLoading(false);
-    });
+    };
+
+    autoLogin();
 
     // Listen for auth changes
     const {

@@ -22,22 +22,31 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Product, ShoppingStatistics, ShoppingList as DBShoppingList } from '../types/database';
 import processReceiptImage, { ReceiptData, ReceiptItem } from '../lib/receiptOCR';
 
-// Types extending database types for local use
-interface ShoppingList extends Omit<DBShoppingList, 'items'> {
-  items: ReceiptItem[];
+// Types
+interface Product {
+  id: string;
+  user_id: string;
+  name: string;
+  category: string;
+  unit: string;
+  price: number;
+  description?: string;
+  created_at: string;
+  updated_at: string;
 }
 
-// Additional types for import functionality
-interface ImportedReceiptItem {
+interface ShoppingList {
+  id: string;
+  user_id: string;
   name: string;
-  brand: string;
-  category: string;
-  store_name: string;
-  price: number;
-  unit: string;
+  date: string;
+  total_amount: number;
+  items: ReceiptItem[];
+  completed: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 const ShoppingScreen: React.FC = () => {
@@ -62,17 +71,6 @@ const ShoppingScreen: React.FC = () => {
   const [selectedItems, setSelectedItems] = useState<ReceiptItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'new' | 'lists' | 'products'>('new');
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  
-  // JSON Import states
-  const [isImportModalVisible, setIsImportModalVisible] = useState(false);
-  const [importJsonData, setImportJsonData] = useState('');
-  const [importStoreName, setImportStoreName] = useState('');
-  
-  // Preview states
-  const [isPreviewModalVisible, setIsPreviewModalVisible] = useState(false);
-  const [previewItems, setPreviewItems] = useState<ImportedReceiptItem[]>([]);
-  const [previewStoreName, setPreviewStoreName] = useState('');
 
   // Categories
   const categories = [
@@ -118,75 +116,7 @@ const ShoppingScreen: React.FC = () => {
         updated_at: product.updated_at
       }));
 
-      // Deduplicate products: keep highest price for same name+unit, or unique if name+unit+price combination
-      const deduplicatedProducts = transformedProducts.reduce((acc: Product[], current) => {
-        const existingIndex = acc.findIndex(product => 
-          product.name.toLowerCase() === current.name.toLowerCase() &&
-          product.unit.toLowerCase() === current.unit.toLowerCase()
-        );
-        
-        if (existingIndex === -1) {
-          // Product name+unit combination doesn't exist, add it
-          acc.push(current);
-        } else {
-          // Product name+unit exists, keep the one with higher price
-          if (current.price > acc[existingIndex].price) {
-            acc[existingIndex] = current;
-          }
-          // If prices are equal, keep the existing one (first encountered)
-        }
-        
-        return acc;
-      }, []);
-
-      // Sort by name for better UX
-      const sortedProducts = deduplicatedProducts.sort((a, b) => 
-        a.name.toLowerCase().localeCompare(b.name.toLowerCase())
-      );
-
-      setProducts(sortedProducts);
-      console.log(`Loaded ${transformedProducts.length} products, deduplicated to ${sortedProducts.length}`);
-      
-      // Add some test products if no products exist
-      if (transformedProducts.length === 0) {
-        const testProducts: Product[] = [
-          {
-            id: 'test1',
-            user_id: user.id,
-            name: 'Kenyér',
-            category: 'Pékáru',
-            unit: 'db',
-            price: 350,
-            description: 'Fehér kenyér',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          },
-          {
-            id: 'test2',
-            user_id: user.id,
-            name: 'Tej',
-            category: 'Tejtermék',
-            unit: 'l',
-            price: 450,
-            description: '2.8% zsírtartalmú tej',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          },
-          {
-            id: 'test3',
-            user_id: user.id,
-            name: 'Alma',
-            category: 'Gyümölcs',
-            unit: 'kg',
-            price: 600,
-            description: 'Piros alma',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }
-        ];
-        setProducts(testProducts);
-        console.log('Test products added:', testProducts.length);
-      }
+      setProducts(transformedProducts);
     } catch (error) {
       console.error('Termékek betöltési hiba:', error);
       Alert.alert('Hiba', 'Nem sikerült betölteni a termékeket');
@@ -225,42 +155,15 @@ const ShoppingScreen: React.FC = () => {
     }
   };
 
-  // Parse list items from JSON string or object
-  const parseListItems = (itemsData: any): ReceiptItem[] => {
+  // Parse list items from JSON string
+  const parseListItems = (itemsString: string): ReceiptItem[] => {
     try {
-      if (!itemsData) return [];
+      if (!itemsString) return [];
       
-      console.log('Parsing items data:', itemsData);
-      console.log('Type of itemsData:', typeof itemsData);
+      const parsed = JSON.parse(itemsString);
+      if (!Array.isArray(parsed)) return [];
       
-      let items: any[] = [];
-      
-      // Ha már array object
-      if (Array.isArray(itemsData)) {
-        items = itemsData;
-      }
-      // Ha object de nem array
-      else if (typeof itemsData === 'object') {
-        console.warn('Items data is object but not array:', itemsData);
-        return [];
-      }
-      // Ha string, parse-oljuk
-      else if (typeof itemsData === 'string') {
-        try {
-          const parsed = JSON.parse(itemsData);
-          items = Array.isArray(parsed) ? parsed : [];
-        } catch (parseError) {
-          console.error('JSON parse error:', parseError);
-          console.error('Raw string:', itemsData);
-          return [];
-        }
-      }
-      else {
-        console.error('Unknown items data type:', typeof itemsData, itemsData);
-        return [];
-      }
-      
-      return items.map((item, index) => ({
+      return parsed.map((item, index) => ({
         id: item.id || generateId(),
         name: item.name || 'Ismeretlen termék',
         quantity: item.quantity || 1,
@@ -271,7 +174,6 @@ const ShoppingScreen: React.FC = () => {
       }));
     } catch (error) {
       console.error('Lista elemek parse hiba:', error);
-      console.error('Hibás itemsData:', itemsData);
       return [];
     }
   };
@@ -303,40 +205,13 @@ const ShoppingScreen: React.FC = () => {
         updated_at: new Date().toISOString()
       };
 
-      // Insert shopping list
-      const { data: listResult, error: listError } = await supabase
+      const { data, error } = await supabase
         .from('shopping_lists')
         .insert([listData])
         .select()
         .single();
 
-      if (listError) throw listError;
-
-      // Create detailed shopping statistics for each item
-      const statisticsData = items.map(item => ({
-        user_id: user.id,
-        shopping_list_id: listResult.id,
-        shopping_date: new Date().toISOString().split('T')[0],
-        product_name: item.name,
-        product_category: item.category,
-        quantity: item.quantity,
-        unit: item.unit,
-        unit_price: item.price,
-        total_price: item.price * item.quantity,
-        created_at: new Date().toISOString()
-      }));
-
-      // Insert statistics data
-      const { error: statsError } = await supabase
-        .from('shopping_statistics')
-        .insert(statisticsData);
-
-      if (statsError) {
-        console.warn('Statistics insert error:', statsError);
-        // Don't throw error here, main list was saved successfully
-      }
-
-      console.log(`Shopping statistics saved: ${statisticsData.length} items for ${totalAmount} Ft`);
+      if (error) throw error;
 
       Alert.alert(
         'Siker',
@@ -357,185 +232,6 @@ const ShoppingScreen: React.FC = () => {
       Alert.alert('Hiba', 'Nem sikerült menteni a listát: ' + (error as Error).message);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // Validate and preview JSON data
-  const validateAndPreviewJson = (jsonData: string, store_name: string = 'Importált bolt') => {
-    try {
-      const receiptItems: ImportedReceiptItem[] = JSON.parse(jsonData);
-      
-      if (!Array.isArray(receiptItems)) {
-        throw new Error('A JSON adatnak tömbnek kell lennie');
-      }
-
-      // Validate required fields
-      for (const item of receiptItems) {
-        if (!item.name || typeof item.price !== 'number') {
-          throw new Error('Minden terméknek rendelkeznie kell névvel és árral');
-        }
-      }
-
-      // Set preview data
-      setPreviewItems(receiptItems);
-      setPreviewStoreName(store_name);
-      
-      // Close import modal and show preview
-      setIsImportModalVisible(false);
-      setIsPreviewModalVisible(true);
-      
-    } catch (error) {
-      console.error('Hiba a JSON validálása során:', error);
-      Alert.alert('Hiba', 'Hibás JSON formátum: ' + (error as Error).message);
-    }
-  };
-
-  // Save imported products to database
-  const saveImportedProductsToDatabase = async (receiptItems: ImportedReceiptItem[]) => {
-    if (!user) return;
-
-    try {
-      // Lekérjük a meglévő termékeket hogy elkerüljük a duplikációt
-      const { data: existingProducts, error: fetchError } = await supabase
-        .from('products')
-        .select('name, unit')
-        .eq('user_id', user.id);
-
-      if (fetchError) {
-        console.error('Hiba a meglévő termékek lekérésekor:', fetchError);
-        return;
-      }
-
-      const existingProductNames = new Set(
-        (existingProducts || []).map(p => `${p.name.toLowerCase()}_${p.unit}`)
-      );
-
-      // Csak azokat a termékeket mentjük el, amelyek még nem léteznek
-      const newProducts: Omit<Product, 'id' | 'created_at' | 'updated_at'>[] = receiptItems
-        .filter(item => {
-          const productKey = `${item.name.toLowerCase()}_${item.unit || 'db'}`;
-          return !existingProductNames.has(productKey);
-        })
-        .map(item => ({
-          user_id: user.id,
-          name: item.name,
-          category: item.category || 'Egyéb',
-          unit: item.unit || 'db',
-          price: item.price,
-          description: item.brand ? `Márka: ${item.brand}` : undefined
-        }));
-
-      if (newProducts.length === 0) {
-        console.log('Minden importált termék már létezik az adatbázisban');
-        return;
-      }
-
-      const { data: insertedProducts, error: insertError } = await supabase
-        .from('products')
-        .insert(newProducts)
-        .select();
-
-      if (insertError) {
-        console.error('Hiba a termékek mentésekor:', insertError);
-      } else {
-        console.log(`${insertedProducts?.length || 0} új termék mentve az adatbázisba`);
-        // Frissítjük a helyi terméklistát
-        loadProducts();
-      }
-
-    } catch (error) {
-      console.error('Hiba a termékek mentése során:', error);
-    }
-  };
-
-  // Import receipt data as JSON
-  const importReceiptData = async (jsonData: string, store_name: string = 'Importált bolt') => {
-    try {
-      const receiptItems: ImportedReceiptItem[] = JSON.parse(jsonData);
-      
-      if (!Array.isArray(receiptItems)) {
-        throw new Error('A JSON adatnak tömbnek kell lennie');
-      }
-
-      // Validate required fields
-      for (const item of receiptItems) {
-        if (!item.name || typeof item.price !== 'number') {
-          throw new Error('Minden terméknek rendelkeznie kell névvel és árral');
-        }
-      }
-      
-      // Konvertáljuk ReceiptItem formátumra
-      const convertedItems: ReceiptItem[] = receiptItems.map(item => ({
-        id: generateId(),
-        name: item.name,
-        price: item.price,
-        quantity: 1,
-        unit: item.unit || 'db',
-        category: item.category || 'Egyéb',
-        checked: false
-      }));
-
-      const totalAmount = convertedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-      
-      const listData = {
-        user_id: user?.id || '',
-        name: `Importált lista - ${new Date().toLocaleDateString('hu-HU')}`,
-        date: new Date().toISOString().split('T')[0],
-        total_amount: totalAmount,
-        items: JSON.stringify(convertedItems),
-        completed: true, // Importált lista már "elkészült"
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-
-      // Insert shopping list
-      const { data: listResult, error: listError } = await supabase
-        .from('shopping_lists')
-        .insert([listData])
-        .select()
-        .single();
-
-      if (listError) {
-        throw listError;
-      }
-
-      // Mentjük a részletes statisztikákat
-      const detailedStatistics: Omit<ShoppingStatistics, 'id' | 'created_at'>[] = receiptItems.map(item => ({
-        user_id: user?.id || '',
-        shopping_list_id: listResult.id,
-        shopping_date: new Date().toISOString().split('T')[0],
-        product_name: item.name,
-        product_category: item.category || 'Egyéb',
-        quantity: 1,
-        unit: item.unit || 'db',
-        unit_price: item.price,
-        total_price: item.price,
-      }));
-
-      const { error: statsError } = await supabase
-        .from('shopping_statistics')
-        .insert(detailedStatistics);
-
-      if (statsError) {
-        console.error('Hiba a statisztikák mentésekor:', statsError);
-      } else {
-        console.log('Importált statisztikák mentve:', detailedStatistics.length, 'tétel');
-      }
-
-      // Termékek mentése a products táblába
-      await saveImportedProductsToDatabase(receiptItems);
-
-      loadShoppingLists();
-      Alert.alert(
-        'Siker', 
-        `${receiptItems.length} tétel sikeresen importálva!\n` +
-        `Összesen: ${totalAmount.toLocaleString('hu-HU')} Ft\n` +
-        `Termékek mentve a terméklistába autocomplete-hez!`
-      );
-      
-    } catch (error) {
-      console.error('Hiba az import során:', error);
-      Alert.alert('Hiba', 'Nem sikerült az adatok importálása: ' + (error as Error).message);
     }
   };
 
@@ -731,54 +427,6 @@ const ShoppingScreen: React.FC = () => {
     product.category.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Filter product suggestions for autocomplete
-  const productSuggestions = products.filter(product =>
-    newItemName.length > 0 && 
-    product.name.toLowerCase().includes(newItemName.toLowerCase())
-  )
-  .sort((a, b) => {
-    const searchTerm = newItemName.toLowerCase();
-    const aStartsWith = a.name.toLowerCase().startsWith(searchTerm);
-    const bStartsWith = b.name.toLowerCase().startsWith(searchTerm);
-    
-    // Prioritize items that start with the search term
-    if (aStartsWith && !bStartsWith) return -1;
-    if (!aStartsWith && bStartsWith) return 1;
-    
-    // Then sort by name
-    return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
-  })
-  .slice(0, 5); // Limit to 5 suggestions
-
-  // Handle product name change with autocomplete
-  const handleProductNameChange = (text: string) => {
-    setNewItemName(text);
-    setShowSuggestions(text.length > 0);
-    console.log('Product name changed to:', text);
-    console.log('Available products:', products.length);
-    console.log('Filtered suggestions:', productSuggestions.length);
-  };
-
-  // Select suggestion
-  const selectSuggestion = (product: Product) => {
-    console.log('Selecting product:', product);
-    setNewItemName(product.name);
-    setNewItemPrice(product.price.toString());
-    setNewItemUnit(product.unit);
-    setNewItemCategory(product.category);
-    setShowSuggestions(false);
-    // Don't auto-add, let user modify and use the add button
-  };
-
-  // Format currency helper
-  const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat('hu-HU', {
-      style: 'currency',
-      currency: 'HUF',
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
   // Calculate total amount
   const totalAmount = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
@@ -806,31 +454,12 @@ const ShoppingScreen: React.FC = () => {
         <Text style={styles.itemDetails}>
           {item.quantity} {item.unit} • {item.category}
         </Text>
-        <Text style={styles.itemPrice}>
-          {(item.price * item.quantity).toLocaleString('hu-HU')} Ft
-        </Text>
       </View>
       
       <View style={styles.itemActions}>
-        {/* Quantity controls */}
-        <View style={styles.quantityControls}>
-          <TouchableOpacity 
-            style={styles.quantityButton}
-            onPress={() => updateItemQuantity(item.id, Math.max(1, item.quantity - 1))}
-          >
-            <Ionicons name="remove" size={16} color="#666" />
-          </TouchableOpacity>
-          
-          <Text style={styles.quantityText}>{item.quantity}</Text>
-          
-          <TouchableOpacity 
-            style={styles.quantityButton}
-            onPress={() => updateItemQuantity(item.id, item.quantity + 1)}
-          >
-            <Ionicons name="add" size={16} color="#666" />
-          </TouchableOpacity>
-        </View>
-        
+        <Text style={styles.itemPrice}>
+          {(item.price * item.quantity).toLocaleString('hu-HU')} Ft
+        </Text>
         <TouchableOpacity onPress={() => removeItem(item.id)}>
           <Ionicons name="trash-outline" size={20} color="#ff4444" />
         </TouchableOpacity>
@@ -892,11 +521,7 @@ const ShoppingScreen: React.FC = () => {
 
   // Render new list tab
   const renderNewListTab = () => (
-    <ScrollView 
-      style={styles.tabContent} 
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={styles.scrollContent}
-    >
+    <ScrollView style={styles.tabContent}>
       {/* List name input */}
       <View style={styles.inputContainer}>
         <Text style={styles.label}>Lista neve</Text>
@@ -919,35 +544,10 @@ const ShoppingScreen: React.FC = () => {
             <TextInput
               style={styles.textInput}
               value={newItemName}
-              onChangeText={handleProductNameChange}
-              onFocus={() => setShowSuggestions(newItemName.length > 0)}
+              onChangeText={setNewItemName}
               placeholder="Termék neve..."
               placeholderTextColor="#999"
             />
-            
-            {/* Product suggestions */}
-            {showSuggestions && productSuggestions.length > 0 && (
-              <ScrollView style={styles.suggestionsContainer} nestedScrollEnabled>
-                {productSuggestions.map((product) => (
-                  <TouchableOpacity
-                    key={product.id}
-                    style={styles.suggestionItem}
-                    onPress={() => {
-                      console.log('TouchableOpacity pressed for product:', product.name);
-                      selectSuggestion(product);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.suggestionInfo}>
-                      <Text style={styles.suggestionName}>{product.name}</Text>
-                      <Text style={styles.suggestionDetails}>
-                        {product.category} • {formatCurrency(product.price)}/{product.unit}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            )}
           </View>
           
           <View style={[styles.inputContainer, { flex: 1, marginLeft: 10 }]}>
@@ -1034,14 +634,6 @@ const ShoppingScreen: React.FC = () => {
           <Ionicons name="camera" size={20} color="white" />
           <Text style={styles.actionButtonText}>Blokk</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.actionButton, styles.importButton]}
-          onPress={() => setIsImportModalVisible(true)}
-        >
-          <Ionicons name="download" size={20} color="white" />
-          <Text style={styles.actionButtonText}>Import</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Current list items */}
@@ -1059,8 +651,6 @@ const ShoppingScreen: React.FC = () => {
             renderItem={renderItem}
             keyExtractor={item => item.id}
             style={styles.itemsList}
-            scrollEnabled={false}
-            nestedScrollEnabled={false}
           />
           
           <TouchableOpacity 
@@ -1313,170 +903,6 @@ const ShoppingScreen: React.FC = () => {
         </SafeAreaView>
       </Modal>
 
-      {/* JSON Import Modal */}
-      <Modal
-        visible={isImportModalVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>JSON Adatok Importálása</Text>
-            <TouchableOpacity onPress={() => setIsImportModalVisible(false)}>
-              <Ionicons name="close" size={24} color="#333" />
-            </TouchableOpacity>
-          </View>
-          
-          <ScrollView style={styles.modalContent}>
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Bolt neve (opcionális)</Text>
-              <TextInput
-                style={styles.textInput}
-                value={importStoreName}
-                onChangeText={setImportStoreName}
-                placeholder="pl. Tesco, Auchan..."
-                placeholderTextColor="#999"
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>JSON Adatok</Text>
-              <Text style={styles.helpText}>
-                Várt formátum: {'[{"name": "Termék neve", "brand": "Márka", "category": "Kategória", "store_name": "Bolt", "price": 450, "unit": "db"}]'}
-              </Text>
-              <TextInput
-                style={[styles.textInput, styles.jsonInput]}
-                value={importJsonData}
-                onChangeText={setImportJsonData}
-                placeholder="Illeszd be a JSON adatokat..."
-                placeholderTextColor="#999"
-                multiline
-                numberOfLines={10}
-                textAlignVertical="top"
-              />
-            </View>
-
-            <View style={styles.importButtonsContainer}>
-              <TouchableOpacity 
-                style={[styles.importActionButton, styles.importCancelButton]}
-                onPress={() => {
-                  setIsImportModalVisible(false);
-                  setImportJsonData('');
-                  setImportStoreName('');
-                }}
-              >
-                <Text style={styles.importCancelButtonText}>Mégse</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.importActionButton, styles.importConfirmButton]}
-                onPress={() => {
-                  if (!importJsonData.trim()) {
-                    Alert.alert('Hiba', 'A JSON adat megadása kötelező!');
-                    return;
-                  }
-                  validateAndPreviewJson(importJsonData, importStoreName || 'Importált bolt');
-                }}
-              >
-                <Ionicons name="eye" size={20} color="white" />
-                <Text style={styles.importConfirmButtonText}>Előnézet</Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
-
-      {/* Preview Modal */}
-      <Modal
-        visible={isPreviewModalVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Lista Előnézet</Text>
-            <TouchableOpacity onPress={() => setIsPreviewModalVisible(false)}>
-              <Ionicons name="close" size={24} color="#333" />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.previewInfo}>
-            <Text style={styles.previewInfoText}>
-              <Text style={styles.previewLabel}>Bolt: </Text>
-              {previewStoreName}
-            </Text>
-            <Text style={styles.previewInfoText}>
-              <Text style={styles.previewLabel}>Termékek száma: </Text>
-              {previewItems.length} db
-            </Text>
-            <Text style={styles.previewInfoText}>
-              <Text style={styles.previewLabel}>Összesen: </Text>
-              {previewItems.reduce((sum, item) => sum + item.price, 0).toLocaleString('hu-HU')} Ft
-            </Text>
-          </View>
-
-          <FlatList
-            data={previewItems}
-            renderItem={({ item, index }) => (
-              <View style={styles.previewItem}>
-                <View style={styles.previewItemHeader}>
-                  <Text style={styles.previewItemName}>{item.name}</Text>
-                  <Text style={styles.previewItemPrice}>
-                    {item.price.toLocaleString('hu-HU')} Ft
-                  </Text>
-                </View>
-                <View style={styles.previewItemDetails}>
-                  <Text style={styles.previewItemDetail}>
-                    <Text style={styles.previewDetailLabel}>Márka: </Text>
-                    {item.brand || 'Nincs megadva'}
-                  </Text>
-                  <Text style={styles.previewItemDetail}>
-                    <Text style={styles.previewDetailLabel}>Kategória: </Text>
-                    {item.category || 'Egyéb'}
-                  </Text>
-                  <Text style={styles.previewItemDetail}>
-                    <Text style={styles.previewDetailLabel}>Egység: </Text>
-                    {item.unit || 'db'}
-                  </Text>
-                </View>
-              </View>
-            )}
-            keyExtractor={(item, index) => index.toString()}
-            style={styles.previewList}
-            showsVerticalScrollIndicator={false}
-          />
-          
-          <View style={styles.previewButtonsContainer}>
-            <TouchableOpacity 
-              style={[styles.previewButton, styles.previewCancelButton]}
-              onPress={() => {
-                setIsPreviewModalVisible(false);
-                setIsImportModalVisible(true); // Vissza az import modalhoz
-              }}
-            >
-              <Ionicons name="arrow-back" size={20} color="#666" />
-              <Text style={styles.previewCancelButtonText}>Szerkesztés</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.previewButton, styles.previewConfirmButton]}
-              onPress={() => {
-                const jsonData = JSON.stringify(previewItems);
-                importReceiptData(jsonData, previewStoreName);
-                setIsPreviewModalVisible(false);
-                setImportJsonData('');
-                setImportStoreName('');
-                setPreviewItems([]);
-                setPreviewStoreName('');
-              }}
-            >
-              <Ionicons name="checkmark" size={20} color="white" />
-              <Text style={styles.previewConfirmButtonText}>Mentés</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </Modal>
-
       {/* Loading overlay */}
       {isLoading && (
         <View style={styles.loadingOverlay}>
@@ -1620,9 +1046,6 @@ const styles = StyleSheet.create({
   receiptButton: {
     backgroundColor: '#FF9800',
   },
-  importButton: {
-    backgroundColor: '#9C27B0',
-  },
   actionButtonText: {
     color: 'white',
     fontSize: 14,
@@ -1632,8 +1055,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     borderRadius: 12,
     padding: 15,
-    marginTop: 10,
-    marginBottom: 20,
   },
   totalAmount: {
     fontSize: 16,
@@ -1642,7 +1063,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   itemsList: {
-    // Remove flex and height constraints to let it size naturally
+    maxHeight: 300,
   },
   itemContainer: {
     flexDirection: 'row',
@@ -1683,9 +1104,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   itemActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
+    alignItems: 'flex-end',
   },
   itemPrice: {
     fontSize: 14,
@@ -1916,204 +1335,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     marginTop: 10,
-  },
-  // Autocomplete suggestions styles
-  suggestionsContainer: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    zIndex: 9999,
-    maxHeight: 200,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    marginTop: 5,
-  },
-  suggestionItem: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  suggestionInfo: {
-    flex: 1,
-  },
-  suggestionName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-  },
-  suggestionDetails: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
-  },
-  // Quantity controls styles
-  quantityControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  quantityButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#f0f0f0',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 5,
-  },
-  quantityText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-    minWidth: 20,
-    textAlign: 'center',
-  },
-  scrollContent: {
-    paddingBottom: 100, // Extra space at bottom for easier scrolling
-  },
-  // Import modal styles
-  modalContent: {
-    flex: 1,
-    padding: 20,
-  },
-  helpText: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 10,
-    fontStyle: 'italic',
-  },
-  jsonInput: {
-    height: 120,
-    textAlignVertical: 'top',
-  },
-  importButtonsContainer: {
-    flexDirection: 'row',
-    gap: 15,
-    marginTop: 20,
-  },
-  importActionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 15,
-    borderRadius: 8,
-    gap: 8,
-  },
-  importCancelButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  importConfirmButton: {
-    backgroundColor: '#9C27B0',
-  },
-  importCancelButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  importConfirmButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  // Preview modal styles
-  previewInfo: {
-    backgroundColor: '#f8f9fa',
-    padding: 15,
-    marginBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  previewInfoText: {
-    fontSize: 14,
-    color: '#333',
-    marginBottom: 5,
-  },
-  previewLabel: {
-    fontWeight: '600',
-    color: '#4CAF50',
-  },
-  previewList: {
-    flex: 1,
-    paddingHorizontal: 15,
-  },
-  previewItem: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 15,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  previewItemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  previewItemName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    flex: 1,
-  },
-  previewItemPrice: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-  },
-  previewItemDetails: {
-    marginTop: 5,
-  },
-  previewItemDetail: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 2,
-  },
-  previewDetailLabel: {
-    fontWeight: '500',
-  },
-  previewButtonsContainer: {
-    flexDirection: 'row',
-    gap: 15,
-    padding: 15,
-    paddingTop: 10,
-    backgroundColor: 'white',
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  previewButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 15,
-    borderRadius: 8,
-    gap: 8,
-  },
-  previewCancelButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  previewConfirmButton: {
-    backgroundColor: '#4CAF50',
-  },
-  previewCancelButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  previewConfirmButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
 

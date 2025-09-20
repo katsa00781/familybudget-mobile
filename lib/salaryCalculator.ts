@@ -2,17 +2,19 @@ import { SalaryCalculationInput, TAX_RATES } from '../types/salary';
 
 // Magyar bérkalkulációs logika
 export class SalaryCalculator {
-  // Havi munkanarok (átlagosan)
-  static readonly AVERAGE_WORK_DAYS_PER_MONTH = 22;
-  static readonly AVERAGE_WORK_HOURS_PER_MONTH = 176;
+  // Havi munkanarok (átlagosan) - 8,1 óra/nap
+  static readonly AVERAGE_WORK_DAYS_PER_MONTH = 21.67; // ~21,67 nap havonta (260 nap/12 hónap)
+  static readonly AVERAGE_WORK_HOURS_PER_MONTH = 175.42; // ~175,42 óra (260 nap × 8,1 óra / 12)
+  static readonly DAILY_WORK_HOURS = 8.1; // 8,1 óra/nap
   
-  // Túlórapótlékok (2025-ös értékek)
+  // Túlórapótlékok (eredeti repo logikája alapján)
   static readonly OVERTIME_MULTIPLIER = 1.0; // 100% (túlóra = alapbér)
-  static readonly SHIFT_ALLOWANCE_MULTIPLIER = 1.45; // 145% (100% alapbér + 45% műszakpótlék)
+  static readonly OVERTIME_ALLOWANCE = 0.0; // 0% (nincs extra túlórapótlék)
+  static readonly SHIFT_ALLOWANCE = 0.45; // 45% (műszakpótlék - túlórára is vonatkozik)
   static readonly HOLIDAY_MULTIPLIER = 2.0; // 200% (100% pótlék)
 
-  // Minimálbér 2024 (példa - frissítendő aktuális értékkel)
-  static readonly MIN_WAGE = 266800;
+  // Minimálbér 2025 (frissítendő aktuális értékkel)
+  static readonly MIN_WAGE = 290000; // 2025-ös minimálbér (290.000 Ft)
 
   /**
    * Bruttó bér számítása
@@ -30,18 +32,27 @@ export class SalaryCalculator {
     // Órabér számítása
     const hourlyWage = alapber / ledolgozott_orak;
 
-    // Túlóra pótlék
-    const overtimePay = tulora_orak * hourlyWage * this.OVERTIME_MULTIPLIER;
+    // Túlóra alapösszeg (100% alapbér)
+    const overtimeBasePay = tulora_orak * hourlyWage * this.OVERTIME_MULTIPLIER;
+    
+    // Túlóra pótlék (0% - nincs extra pótlék)
+    const overtimeAllowance = tulora_orak * hourlyWage * this.OVERTIME_ALLOWANCE;
+    
+    // Túlórára műszakpótlék (45% - ha a túlóra műszakban történik)
+    // Ezt külön paraméterként kellene kezelni, most feltételezzük hogy a muszakpotlek_orak tartalmazza
+    const overtimeShiftAllowance = tulora_orak * hourlyWage * this.SHIFT_ALLOWANCE;
 
-    // Műszakpótlék
-    const shiftAllowance = muszakpotlek_orak * hourlyWage * this.SHIFT_ALLOWANCE_MULTIPLIER;
+    // Műszakpótlék (45% extra a normál műszakban dolgozott órákra)
+    const shiftAllowance = muszakpotlek_orak * hourlyWage * this.SHIFT_ALLOWANCE;
 
     // Ünnepnapi pótlék
     const holidayPay = unnepnapi_orak * hourlyWage * this.HOLIDAY_MULTIPLIER;
 
     return Math.round(
       alapber + 
-      overtimePay + 
+      overtimeBasePay + 
+      overtimeAllowance +
+      overtimeShiftAllowance +
       shiftAllowance + 
       holidayPay + 
       formaruha_kompenzacio
@@ -64,14 +75,14 @@ export class SalaryCalculator {
   }
 
   /**
-   * Önkéntes nyugdíjpénztári befizetés (1.5% - adóalapot csökkenti)
+   * Önkéntes nyugdíjpénztári befizetés (2% - adóalapot csökkenti)
    */
   static calculateVoluntaryPensionContribution(grossSalary: number): number {
     return Math.round(grossSalary * TAX_RATES.ÖNKÉNTES_NYUGDIJ);
   }
 
   /**
-   * Érdekképviseleti tagdíj (0.7% - adóalapot csökkenti)
+   * Érdekképviseleti tagdíj (0.5% - adóalapot csökkenti)
    */
   static calculateUnionFee(grossSalary: number): number {
     return Math.round(grossSalary * TAX_RATES.ERDEKKÉPVISELETI_TAGDIJ);
@@ -79,6 +90,7 @@ export class SalaryCalculator {
 
   /**
    * SZJA számítása (15% - általános adókedvezménnyel)
+   * Megjegyzés: érdekképviseleti tagdíj NEM csökkenti az SZJA alapot a 2025-ös szabályok szerint
    */
   static calculateIncomeTax(
     grossSalary: number, 
@@ -87,7 +99,7 @@ export class SalaryCalculator {
     voluntaryPension: number,
     familyTaxCredit: number = 0
   ): number {
-    // SZJA alap számítása
+    // SZJA alap számítása (érdekképviseleti tagdíj NÉLKÜL)
     const taxBase = grossSalary - socialSecurity - pensionContribution - voluntaryPension;
     const taxBaseAfterFamilyCredit = Math.max(0, taxBase - familyTaxCredit);
     
@@ -95,7 +107,7 @@ export class SalaryCalculator {
     const grossTax = Math.round(taxBaseAfterFamilyCredit * TAX_RATES.SZJA);
     
     // Általános adókedvezmény levonása (2025-ben minimum 10.000 Ft)
-    const generalTaxCredit = 10000;
+    const generalTaxCredit = TAX_RATES.ALTALANOS_ADOKEDVEZMENY;
     return Math.max(0, grossTax - generalTaxCredit);
   }
 
@@ -149,7 +161,7 @@ export class SalaryCalculator {
       brutto_ber + formaruha_kompenzacio, 
       tb_jarulék, 
       nyugdijjarulék, 
-      onkentes_nyugdij, 
+      onkentes_nyugdij,
       csaladi_adokedvezmeny
     );
 
