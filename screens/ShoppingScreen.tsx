@@ -63,7 +63,6 @@ export default function ShoppingScreen() {
 
       setLists(parsedLists);
     } catch (error) {
-      console.error('Error loading shopping lists:', error);
       Alert.alert('Hiba', 'Nem sikerült betölteni a bevásárló listákat');
     }
   };
@@ -86,10 +85,8 @@ export default function ShoppingScreen() {
         return acc;
       }, []);
 
-      console.log(`Loaded ${data.length} products, deduplicated to ${uniqueProducts.length}`);
       setProducts(uniqueProducts);
     } catch (error) {
-      console.error('Error loading products:', error);
       Alert.alert('Hiba', 'Nem sikerült betölteni a termékeket');
     }
   };
@@ -176,7 +173,6 @@ export default function ShoppingScreen() {
       loadShoppingLists();
       Alert.alert('Siker', 'A lista sikeresen mentve!');
     } catch (error) {
-      console.error('Error saving list:', error);
       Alert.alert('Hiba', 'Nem sikerült menteni a listát');
     }
   };
@@ -200,7 +196,6 @@ export default function ShoppingScreen() {
               if (error) throw error;
               loadShoppingLists();
             } catch (error) {
-              console.error('Error deleting list:', error);
               Alert.alert('Hiba', 'Nem sikerült törölni a listát');
             }
           }
@@ -270,7 +265,7 @@ export default function ShoppingScreen() {
           });
 
         if (productError) {
-          console.warn('Error saving product:', productError);
+          // Silent error for product saving
         }
       }
 
@@ -279,7 +274,6 @@ export default function ShoppingScreen() {
       setIsImportModalVisible(false);
       Alert.alert('Siker', `A ${listName} lista sikeresen importálva!`);
     } catch (error) {
-      console.error('Error importing receipt data:', error);
       Alert.alert('Hiba', 'Nem sikerült importálni az adatokat');
     } finally {
       setIsLoading(false);
@@ -372,7 +366,7 @@ export default function ShoppingScreen() {
       if (error) throw error;
       loadShoppingLists();
     } catch (error) {
-      console.error('Error updating list item:', error);
+      // Silent error for list item update
     }
   };
 

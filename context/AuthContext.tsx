@@ -28,7 +28,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
-          console.error('Error getting session:', error);
           setLoading(false);
           return;
         }
@@ -41,7 +40,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         setLoading(false);
       } catch (error) {
-        console.error('Error in getSession:', error);
         setLoading(false);
       }
     };
@@ -63,7 +61,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         setLoading(false);
       } catch (error) {
-        console.error('Error in auth state change:', error);
         setLoading(false);
       }
     });
@@ -80,7 +77,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single();
 
       if (error && error.code !== 'PGRST116') { // PGRST116 = No rows found
-        console.error('Error loading user profile:', error);
         return;
       }
 
@@ -88,21 +84,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUserProfile(data);
       }
     } catch (error) {
-      console.error('Error loading user profile:', error);
+      // Silent error for loading user profile
     }
   };
 
   const signIn = async (email: string, password: string) => {
     try {
-      console.log('Attempting sign in with:', email);
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-      console.log('Sign in response - data:', data, 'error:', error);
       return { error };
     } catch (error) {
-      console.error('Sign in catch error:', error);
       return { error };
     }
   };

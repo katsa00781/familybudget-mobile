@@ -126,7 +126,6 @@ const StatisticsScreen = () => {
       calculateStatistics(data || []);
       
     } catch (error) {
-      console.error('Statisztikák betöltési hiba:', error);
       Alert.alert('Hiba', 'Nem sikerült betölteni a statisztikákat');
     } finally {
       setLoading(false);

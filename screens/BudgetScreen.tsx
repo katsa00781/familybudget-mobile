@@ -783,27 +783,6 @@ const BudgetScreen: React.FC = () => {
                      muszakpotlek + tuloraMuszakpotlek + unnepnapiMunka + 
                      betegszabadsag + kikuldetesTobblet;
 
-    console.log('=== BÉRSZÁMÍTÁS DEBUG ===');
-    console.log('Input értékek:');
-    console.log('- alapber:', alapber);
-    console.log('- ledolgozottNapok:', ledolgozottNapok);
-    console.log('- ledolgozottOrak:', ledolgozottOrak);
-    console.log('- tuloraOrak:', tuloraOrak);
-    console.log('- oraber:', oraber, 'isNaN:', isNaN(oraber));
-    
-    console.log('Számított értékek:');
-    console.log('- haviberesIdober:', haviberesIdober, 'isNaN:', isNaN(haviberesIdober));
-    console.log('- fizetettSzabadsag:', fizetettSzabadsag, 'isNaN:', isNaN(fizetettSzabadsag));
-    console.log('- tuloraAlapösszeg:', tuloraAlapossszeg, 'isNaN:', isNaN(tuloraAlapossszeg));
-    console.log('- tuloraPihenpnapos:', tuloraPihenpnapos, 'isNaN:', isNaN(tuloraPihenpnapos));
-    console.log('- tuloraPotlek:', tuloraPotlek, 'isNaN:', isNaN(tuloraPotlek));
-    console.log('- muszakpotlek:', muszakpotlek, 'isNaN:', isNaN(muszakpotlek));
-    console.log('- tuloraMuszakpotlek:', tuloraMuszakpotlek, 'isNaN:', isNaN(tuloraMuszakpotlek));
-    console.log('- unnepnapiMunka:', unnepnapiMunka, 'isNaN:', isNaN(unnepnapiMunka));
-    console.log('- betegszabadsag:', betegszabadsag, 'isNaN:', isNaN(betegszabadsag));
-    console.log('- kikuldetesTobblet:', kikuldetesTobblet, 'isNaN:', isNaN(kikuldetesTobblet));
-    console.log('- gyedMunkavMellett:', gyedMunkavMellett, 'isNaN:', isNaN(gyedMunkavMellett));
-    console.log('Bruttó bér:', bruttoBer, 'isNaN:', isNaN(bruttoBer));
     // Összes járandóság
     const osszesJarandsag = bruttoBer + gyedMunkavMellett + formaruhakompenzacio;
     
@@ -835,20 +814,9 @@ const BudgetScreen: React.FC = () => {
     
     // Összes levonás
     const osszesLevonas = tbJarulék + nyugdijJarulék + onkentesNyugdij + szja + erdekKepvTagdij;
-
-    console.log('--- Levonások részletezve ---');
-    console.log('összes levonás:', osszesLevonas, 'isNaN:', isNaN(osszesLevonas));
-    console.log('tbJarulék:', tbJarulék, 'isNaN:', isNaN(tbJarulék));
-    console.log('nyugdijJarulék:', nyugdijJarulék, 'isNaN:', isNaN(nyugdijJarulék));
-    console.log('onkentesNyugdij:', onkentesNyugdij, 'isNaN:', isNaN(onkentesNyugdij));
-    console.log('szja:', szja, 'isNaN:', isNaN(szja));
-    console.log('erdekKepvTagdij:', erdekKepvTagdij, 'isNaN:', isNaN(erdekKepvTagdij));
-    console.log('========================');  
     
     // Nettó fizetés
     const netto = osszesJarandsag - osszesLevonas;
-
-    console.log('nettó:', netto);
     
     // Munkáltatói terhek
     const szocHozzjarulas = Math.round((bruttoBer + formaruhakompenzacio) * KULCSOK.SZOCIALIS_HOZZAJARULAS);
