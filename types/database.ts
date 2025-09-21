@@ -105,3 +105,30 @@ export interface ShoppingStatistics {
   total_price: number;
   created_at: string;
 }
+
+export interface ProductPriceHistory {
+  id: string;
+  user_id: string;
+  product_name: string;
+  normalized_name: string; // Kereséshez normalizált név
+  category: string;
+  unit: string;
+  price: number;
+  store_name?: string;
+  purchase_date: string; // YYYY-MM-DD
+  created_at: string;
+}
+
+export interface InflationStats {
+  product_name: string;
+  category: string;
+  unit: string;
+  current_price: number;
+  previous_price: number;
+  price_change: number;
+  price_change_percent: number;
+  first_purchase_date: string;
+  last_purchase_date: string;
+  purchase_frequency: number; // Hányszor vásárolta az adott időszakban
+  total_spent: number;
+}
