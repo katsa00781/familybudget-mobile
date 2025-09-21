@@ -273,7 +273,7 @@ const BudgetScreen: React.FC = () => {
         .order('created_at', { ascending: false });
 
       if (budgetError) {
-        console.warn('Budget plans error:', budgetError);
+        // Silent error handling
       }
 
       // Bevételi tervek betöltése
@@ -284,7 +284,7 @@ const BudgetScreen: React.FC = () => {
         .order('created_at', { ascending: false });
 
       if (incomeError) {
-        console.warn('Income plans error:', incomeError);
+        // Silent error handling
       }
 
       setSavedBudgets(budgetData || []);
@@ -302,7 +302,7 @@ const BudgetScreen: React.FC = () => {
       }
 
     } catch (error) {
-      console.error('Hiba az adatok betöltésekor:', error);
+      // Silent error handling
     } finally {
       setLoading(false);
     }
@@ -342,7 +342,7 @@ const BudgetScreen: React.FC = () => {
         }
       }
     } catch (error) {
-      console.error('Error fetching users:', error);
+      // Silent error handling
     }
   };
 
@@ -739,7 +739,6 @@ const BudgetScreen: React.FC = () => {
           { text: 'Bezár', style: 'cancel' },
           { text: 'Megosztás', onPress: () => {
             // Itt lehetne megosztási funkciót implementálni
-            console.log('JSON Export:', jsonString);
           }}
         ]
       );

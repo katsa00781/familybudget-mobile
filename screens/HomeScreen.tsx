@@ -121,7 +121,7 @@ export default function HomeScreen({ navigation }: any) {
         .limit(1);
 
       if (budgetError) {
-        // Silent error handling
+        console.warn('Budget plans error:', budgetError);
       }
 
       // Bevételi tervek betöltése
@@ -133,7 +133,7 @@ export default function HomeScreen({ navigation }: any) {
         .limit(1);
 
       if (incomeError) {
-        // Silent error handling
+        console.warn('Income plans error:', incomeError);
       }
 
       // Megtakarítási célok betöltése
@@ -144,7 +144,7 @@ export default function HomeScreen({ navigation }: any) {
         .order('created_at', { ascending: false });
 
       if (savingsError) {
-        // Silent error handling
+        console.warn('Savings goals error:', savingsError);
       }
 
       setBudgetPlans(budgetData || []);
@@ -170,7 +170,7 @@ export default function HomeScreen({ navigation }: any) {
             }
           }
         } catch (error) {
-          // Silent error for parsing additional incomes
+          console.warn('Error parsing additional incomes:', error);
         }
 
         // IncomePlan objektum összeállítása
@@ -198,7 +198,7 @@ export default function HomeScreen({ navigation }: any) {
         .limit(1);
 
       if (shoppingError) {
-        // Silent error handling
+        console.warn('Shopping lists error:', shoppingError);
       } else if (shoppingData && shoppingData.length > 0) {
         const rawList = shoppingData[0];
         try {
@@ -217,7 +217,7 @@ export default function HomeScreen({ navigation }: any) {
           setShoppingLists([shoppingList]);
           setCurrentShoppingList(shoppingList);
         } catch (error) {
-          // Silent error for parsing shopping list items
+          console.warn('Error parsing shopping list items:', error);
         }
       }
 
@@ -256,6 +256,7 @@ export default function HomeScreen({ navigation }: any) {
       }
 
     } catch (error) {
+      console.error('Hiba a dashboard adatok betöltésekor:', error);
       Alert.alert('Információ', 'Az adatok betöltése során hiba történt. Alapértelmezett értékek lesznek használva.');
     } finally {
       setLoading(false);
@@ -350,7 +351,7 @@ export default function HomeScreen({ navigation }: any) {
         .update({ items: JSON.stringify(updatedItems) })
         .eq('id', currentShoppingList.id);
     } catch (error) {
-      // Silent error for updating shopping item
+      console.error('Error updating shopping item:', error);
     }
   };
 
