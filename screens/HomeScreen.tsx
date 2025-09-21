@@ -444,10 +444,9 @@ export default function HomeScreen({ navigation }: any) {
 
           {/* Stats Cards */}
           <View style={styles.statsContainer}>
-            {renderStatsCard('Egyenleg', dashboardStats.totalBalance, 'wallet', '#14B8A6')}
-            {renderStatsCard('Havi bevétel', dashboardStats.monthlyIncome, 'arrow-up', '#10B981')}
-            {renderStatsCard('Havi kiadás', dashboardStats.monthlyExpenses, 'arrow-down', '#EF4444')}
-            {renderStatsCard('Megtakarítás', dashboardStats.savings, 'trophy', '#8B5CF6')}
+            {renderStatsCard('Tervezett havi bevétel', dashboardStats.monthlyIncome, 'arrow-up', '#10B981')}
+            {renderStatsCard('Tervezett havi kiadás', dashboardStats.monthlyExpenses, 'arrow-down', '#EF4444')}
+            {renderStatsCard('Tervezett havi megtakarítás', dashboardStats.savings, 'trophy', '#8B5CF6')}
           </View>
 
           {/* Quick Actions */}
