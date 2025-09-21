@@ -1165,20 +1165,23 @@ const BudgetScreen: React.FC = () => {
 
         {/* Type Summary */}
         <View style={styles.typeSummaryContainer}>
-          <View style={styles.typeItem}>
-            <View style={[styles.typeIndicator, { backgroundColor: getTypeColor('Szükséglet') }]} />
-            <Text style={styles.typeLabel}>Szükséglet</Text>
-            <Text style={styles.typeAmount}>{formatCurrency(szuksegletTotal)}</Text>
-          </View>
-          <View style={styles.typeItem}>
-            <View style={[styles.typeIndicator, { backgroundColor: getTypeColor('Vágyak') }]} />
-            <Text style={styles.typeLabel}>Vágyak</Text>
-            <Text style={styles.typeAmount}>{formatCurrency(vagyakTotal)}</Text>
-          </View>
-          <View style={styles.typeItem}>
-            <View style={[styles.typeIndicator, { backgroundColor: getTypeColor('Megtakarítás') }]} />
-            <Text style={styles.typeLabel}>Megtakarítás</Text>
-            <Text style={styles.typeAmount}>{formatCurrency(megtakaritasTotal)}</Text>
+          <Text style={styles.sectionTitle}>Kiadási típusok</Text>
+          <View style={styles.typeRow}>
+            <View style={styles.typeCard}>
+              <View style={[styles.typeIndicator, { backgroundColor: getTypeColor('Szükséglet') }]} />
+              <Text style={styles.typeLabel}>Szükséglet</Text>
+              <Text style={styles.typeAmount}>{formatCurrency(szuksegletTotal)}</Text>
+            </View>
+            <View style={styles.typeCard}>
+              <View style={[styles.typeIndicator, { backgroundColor: getTypeColor('Vágyak') }]} />
+              <Text style={styles.typeLabel}>Vágyak</Text>
+              <Text style={styles.typeAmount}>{formatCurrency(vagyakTotal)}</Text>
+            </View>
+            <View style={styles.typeCard}>
+              <View style={[styles.typeIndicator, { backgroundColor: getTypeColor('Megtakarítás') }]} />
+              <Text style={styles.typeLabel}>Megtakarítás</Text>
+              <Text style={styles.typeAmount}>{formatCurrency(megtakaritasTotal)}</Text>
+            </View>
           </View>
         </View>
 
@@ -1589,7 +1592,7 @@ const BudgetScreen: React.FC = () => {
 
   if (loading) {
     return (
-      <LinearGradient colors={['#667eea', '#764ba2']} style={styles.container}>
+      <LinearGradient colors={['#22D3EE', '#14B8A6', '#22C55E']} style={styles.container}>
         <SafeAreaView style={styles.safeArea}>
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="white" />
@@ -1601,7 +1604,7 @@ const BudgetScreen: React.FC = () => {
   }
 
   return (
-    <LinearGradient colors={['#667eea', '#764ba2']} style={styles.container}>
+    <LinearGradient colors={['#22D3EE', '#14B8A6', '#22C55E']} style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         {/* Header */}
         <View style={styles.header}>
@@ -2163,6 +2166,9 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     marginTop: 16,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   header: {
     flexDirection: 'row',
@@ -2170,11 +2176,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 16,
+    paddingTop: 60,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: 'bold',
     color: 'white',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
   },
   saveButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
@@ -2207,14 +2217,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   budgetSelectorContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     marginHorizontal: 20,
     borderRadius: 12,
     padding: 16,
     marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
   },
   budgetSelectorTitle: {
-    color: 'white',
+    color: '#333',
     fontSize: 16,
     fontWeight: 'bold',
     marginBottom: 12,
@@ -2223,27 +2238,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   budgetOption: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(20, 184, 166, 0.1)',
     borderRadius: 8,
     padding: 12,
     marginRight: 12,
     minWidth: 120,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(20, 184, 166, 0.3)',
   },
   activeBudgetOption: {
-    backgroundColor: 'white',
+    backgroundColor: '#14B8A6',
   },
   budgetOptionText: {
-    color: 'white',
+    color: '#333',
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 4,
   },
   activeBudgetOptionText: {
-    color: '#333',
+    color: 'white',
   },
   budgetOptionAmount: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: '#666',
     fontSize: 12,
   },
   scrollView: {
@@ -2254,42 +2271,53 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   summaryCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 12,
     padding: 20,
     marginBottom: 12,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
   },
   summaryRow: {
     flexDirection: 'row',
     gap: 12,
   },
-  halfCard: {
+  summaryItem: {
     flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  summaryTitle: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
+  summaryLabel: {
+    fontSize: 12,
+    color: '#666',
     marginBottom: 4,
   },
   summaryAmount: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: 'bold',
-    color: 'white',
+    color: '#333',
   },
   typeSummaryContainer: {
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     marginHorizontal: 20,
     borderRadius: 12,
     padding: 20,
     marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 5,
   },
   sectionTitle: {
     fontSize: 18,
@@ -2305,6 +2333,9 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     marginHorizontal: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    borderRadius: 8,
+    padding: 12,
   },
   typeIndicator: {
     width: 12,
@@ -2315,19 +2346,26 @@ const styles = StyleSheet.create({
   typeLabel: {
     fontSize: 12,
     color: '#666',
-    marginBottom: 4,
+    marginBottom: 8,
+    textAlign: 'center',
   },
   typeAmount: {
     fontSize: 14,
     fontWeight: 'bold',
     color: '#333',
+    textAlign: 'center',
   },
   categoriesContainer: {
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     marginHorizontal: 20,
     borderRadius: 12,
     padding: 20,
     marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
   },
   categoryContainer: {
     marginBottom: 24,
@@ -2365,17 +2403,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
     borderRadius: 12,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
@@ -2432,11 +2467,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(255, 255, 255, 0.98)',
     borderRadius: 16,
     padding: 24,
     width: '90%',
     maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 10,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -2587,10 +2627,15 @@ const styles = StyleSheet.create({
   // Tab navigation styles
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 12,
     margin: 16,
     padding: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   tabButton: {
     flex: 1,
@@ -2603,7 +2648,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#14B8A6',
   },
   tabText: {
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: '#666',
     fontSize: 14,
     fontWeight: '600',
   },
@@ -2622,11 +2667,19 @@ const styles = StyleSheet.create({
   
   // Balance styles
   balanceContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 12,
+    padding: 20,
     alignItems: 'center',
     marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
   },
   balanceTitle: {
-    color: 'rgba(255, 255, 255, 0.7)',
+    color: '#666',
     fontSize: 14,
     marginBottom: 4,
   },
@@ -2635,24 +2688,6 @@ const styles = StyleSheet.create({
   },
   negativeBalance: {
     color: '#EF4444',
-  },
-  
-  // Summary styles
-  summaryItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  summaryLabel: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  
-  // Type styles
-  typeItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
   },
   
   // Categories styles
@@ -2700,34 +2735,48 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   section: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
+    marginHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
   },
   familyMemberSelector: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(20, 184, 166, 0.1)',
     borderRadius: 12,
     padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(20, 184, 166, 0.3)',
   },
   familyMemberText: {
-    color: '#FFFFFF',
+    color: '#333',
     fontSize: 16,
     fontWeight: '500',
   },
   inputHint: {
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: '#666',
     fontSize: 12,
     marginTop: 4,
   },
   resultCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 16,
     padding: 20,
     marginBottom: 16,
+    marginHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
   },
   resultItem: {
     flexDirection: 'row',
@@ -2736,11 +2785,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   resultLabel: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: '#666',
     fontSize: 14,
   },
   resultValue: {
-    color: '#FFFFFF',
+    color: '#333',
     fontSize: 14,
     fontWeight: '500',
   },
@@ -2751,7 +2800,7 @@ const styles = StyleSheet.create({
   },
   mainResult: {
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.2)',
+    borderTopColor: '#E5E7EB',
     paddingTop: 12,
     marginTop: 8,
   },

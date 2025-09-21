@@ -13,14 +13,23 @@ import {
   RefreshControl,
   SafeAreaView,
   StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
+import processReceiptImageOCR, { addLearningExample, getLearningStats, addTestLearningData } from '../lib/receiptOCR_clean';
 
 export default function ShoppingScreen() {
+  // Auth context
+  const { user } = useAuth();
+  
   // Keep all existing state and functions as they are...
   const [activeTab, setActiveTab] = useState('new');
   const [newListName, setNewListName] = useState('');
@@ -40,18 +49,34 @@ export default function ShoppingScreen() {
   const [previewItems, setPreviewItems] = useState([]);
   const [previewStoreName, setPreviewStoreName] = useState('');
   const [isPreviewModalVisible, setIsPreviewModalVisible] = useState(false);
+  const [editingItem, setEditingItem] = useState(null); // OCR szerkesztéshez
+  const [editingItemIndex, setEditingItemIndex] = useState(-1);
+  const [originalOCRResult, setOriginalOCRResult] = useState(null); // Eredeti OCR eredmény tárolása
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false); // Explicit flag a szerkesztő modalhoz
+  
+  // Helyi szerkesztési state-ek
+  const [editName, setEditName] = useState('');
+  const [editQuantity, setEditQuantity] = useState('1');
+  const [editUnit, setEditUnit] = useState('db');
+  const [editPrice, setEditPrice] = useState('0');
+  const [editCategory, setEditCategory] = useState('Egyéb');
 
   // Keep all existing functions and logic...
   useEffect(() => {
-    loadShoppingLists();
-    loadProducts();
-  }, []);
+    if (user?.id) {
+      loadShoppingLists();
+      loadProducts();
+    }
+  }, [user?.id]);
 
   const loadShoppingLists = async () => {
+    if (!user?.id) return;
+    
     try {
       const { data, error } = await supabase
         .from('shopping_lists')
         .select('*')
+        .eq('user_id', user?.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -149,6 +174,11 @@ export default function ShoppingScreen() {
   };
 
   const saveList = async () => {
+    if (!user?.id) {
+      Alert.alert('Hiba', 'Nincs bejelentkezett felhasználó');
+      return;
+    }
+
     if (!newListName.trim()) {
       Alert.alert('Hiba', 'Kérjük, adja meg a lista nevét');
       return;
@@ -163,9 +193,10 @@ export default function ShoppingScreen() {
       const { error } = await supabase
         .from('shopping_lists')
         .insert({
+          user_id: user?.id,
           name: newListName,
           items: JSON.stringify(newItems),
-          total_price: newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+          total_amount: newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
         });
 
       if (error) throw error;
@@ -224,6 +255,11 @@ export default function ShoppingScreen() {
   };
 
   const importReceiptData = async (jsonData, storeName) => {
+    if (!user?.id) {
+      Alert.alert('Hiba', 'Nincs bejelentkezett felhasználó');
+      return;
+    }
+
     try {
       setIsLoading(true);
       const items = JSON.parse(jsonData);
@@ -248,9 +284,10 @@ export default function ShoppingScreen() {
       const { error } = await supabase
         .from('shopping_lists')
         .insert({
+          user_id: user?.id,
           name: listName,
           items: JSON.stringify(formattedItems),
-          total_price: formattedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+          total_amount: formattedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
         });
 
       if (error) throw error;
@@ -327,8 +364,280 @@ export default function ShoppingScreen() {
     });
 
     if (!result.canceled) {
-      // Itt implementálhatjuk az OCR funkciót
-      Alert.alert('Fejlesztés alatt', 'A szövegfelismerés funkció hamarosan elérhető');
+      processReceiptImage(result.assets[0].uri);
+    }
+  };
+
+  const pickFromGallery = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Hiba', 'Fotótárhoz való hozzáférés szükséges');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      processReceiptImage(result.assets[0].uri);
+    }
+  };
+
+  const processReceiptImage = async (imageUri: string) => {
+    try {
+      setIsLoading(true);
+      Alert.alert('OCR feldolgozás', 'Nyugta feldolgozása folyamatban...');
+      
+      const receiptData = await processReceiptImageOCR(imageUri);
+      
+      if (receiptData && receiptData.items.length > 0) {
+        setOriginalOCRResult(receiptData); // Eredeti OCR eredmény tárolása
+        setPreviewItems(receiptData.items);
+        setPreviewStoreName(receiptData.store);
+        setIsPreviewModalVisible(true);
+        const storeInfo = receiptData.store ? ` (${receiptData.store})` : '';
+        Alert.alert('Siker!', `${receiptData.items.length} termék felismerve a nyugtáról${storeInfo}`);
+      } else {
+        Alert.alert('Hiba', 'Nem sikerült termékeket felismerni a képről');
+      }
+    } catch (error) {
+      console.error('OCR hiba:', error);
+      Alert.alert('Hiba', 'Nem sikerült feldolgozni a képet: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Termék szerkesztése az OCR előnézetben
+  const editPreviewItem = (item, index) => {
+    console.log('🔧 Szerkesztés megkezdése:', item.name, 'index:', index);
+    console.log('🔧 Teljes item:', JSON.stringify(item));
+    console.log('🔍 Modal render check - isEditModalVisible ELŐTTE:', isEditModalVisible);
+    
+    // ELŐSZÖR bezárjuk a preview modal-t
+    setIsPreviewModalVisible(false);
+    
+    setEditingItem({ ...item });
+    setEditingItemIndex(index);
+    
+    // Helyi state-ek beállítása
+    setEditName(item.name || '');
+    setEditQuantity(item.quantity?.toString() || '1');
+    setEditUnit(item.unit || 'db');
+    setEditPrice(item.price?.toString() || '0');
+    setEditCategory(item.category || 'Egyéb');
+    
+    // Kis delay után nyitjuk meg a szerkesztő modal-t
+    setTimeout(() => {
+      setIsEditModalVisible(true);
+      console.log('🔧 Szerkesztő modal megnyitás delay után');
+    }, 300);
+    
+    console.log('🔧 State-ek beállítva:');
+    console.log('   editingItem:', { ...item });
+    console.log('   editingItemIndex:', index);
+    console.log('   editName:', item.name || '');
+    console.log('   Preview modal bezárva, szerkesztő modal hamarosan nyílik');
+  };
+
+  // Szerkesztett termék mentése
+  const saveEditedItem = () => {
+    console.log('🔧 Termék mentése megkezdve');
+    if (editingItemIndex >= 0 && editingItem) {
+      const updatedItem = {
+        ...editingItem,
+        name: editName,
+        quantity: parseInt(editQuantity) || 1,
+        unit: editUnit,
+        price: parseFloat(editPrice) || 0,
+        category: editCategory
+      };
+      
+      const updatedItems = [...previewItems];
+      updatedItems[editingItemIndex] = updatedItem;
+      setPreviewItems(updatedItems);
+      
+      // State-ek törlése
+      setEditingItem(null);
+      setEditingItemIndex(-1);
+      setIsEditModalVisible(false);
+      setEditName('');
+      setEditQuantity('1');
+      setEditUnit('db');
+      setEditPrice('0');
+      setEditCategory('Egyéb');
+      
+      // Vissza a preview modal-hoz
+      setTimeout(() => {
+        setIsPreviewModalVisible(true);
+        console.log('🔧 Termék mentve, visszatérés a preview modal-hoz');
+      }, 300);
+      
+      console.log('🔧 Termék sikeresen mentve');
+    }
+  };
+
+  // Szerkesztés megszakítása
+  const cancelEditItem = () => {
+    console.log('🔧 Szerkesztés megszakítása');
+    setEditingItem(null);
+    setEditingItemIndex(-1);
+    setIsEditModalVisible(false);
+    setEditName('');
+    setEditQuantity('1');
+    setEditUnit('db');
+    setEditPrice('0');
+    setEditCategory('Egyéb');
+    
+    // Vissza a preview modal-hoz
+    setTimeout(() => {
+      setIsPreviewModalVisible(true);
+      console.log('🔧 Visszatérés a preview modal-hoz');
+    }, 300);
+  };
+
+  // Bevásárlási statisztikák lekérése
+  const getShoppingStats = async () => {
+    if (!user?.id) {
+      return {
+        totalLists: 0,
+        totalItems: 0,
+        totalAmount: 0,
+        mostBoughtItems: [],
+        averageListValue: 0,
+        storeFrequency: {},
+        categoryStats: {}
+      };
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('shopping_lists')
+        .select('*')
+        .eq('user_id', user?.id);
+
+      if (error) throw error;
+
+      const parsedLists = data.map(list => ({
+        ...list,
+        items: typeof list.items === 'string' ? JSON.parse(list.items) : list.items
+      }));
+
+      // Statisztikák számítása
+      const totalLists = parsedLists.length;
+      let totalItems = 0;
+      let totalAmount = 0;
+      const itemFrequency = {};
+      const storeFrequency = {};
+      const categoryStats = {};
+
+      parsedLists.forEach(list => {
+        totalAmount += list.total_amount || 0;
+        
+        // Bolt gyakoriság (ha van store név a lista nevében)
+        const listName = list.name || '';
+        const storeNames = ['TESCO', 'ALDI', 'LIDL', 'CBA', 'PENNY', 'AUCHAN', 'SPAR'];
+        storeNames.forEach(store => {
+          if (listName.toUpperCase().includes(store)) {
+            storeFrequency[store] = (storeFrequency[store] || 0) + 1;
+          }
+        });
+
+        if (list.items && Array.isArray(list.items)) {
+          list.items.forEach(item => {
+            totalItems++;
+            
+            // Termék gyakoriság
+            const itemName = item.name || 'Ismeretlen';
+            itemFrequency[itemName] = (itemFrequency[itemName] || 0) + (item.quantity || 1);
+            
+            // Kategória statisztikák
+            const category = item.category || 'Egyéb';
+            if (!categoryStats[category]) {
+              categoryStats[category] = { count: 0, totalValue: 0 };
+            }
+            categoryStats[category].count += (item.quantity || 1);
+            categoryStats[category].totalValue += ((item.price || 0) * (item.quantity || 1));
+          });
+        }
+      });
+
+      // Leggyakoribb termékek (top 10)
+      const mostBoughtItems = Object.entries(itemFrequency)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 10)
+        .map(([name, count]) => ({ name, count }));
+
+      const averageListValue = totalLists > 0 ? Math.round(totalAmount / totalLists) : 0;
+
+      return {
+        totalLists,
+        totalItems,
+        totalAmount: Math.round(totalAmount),
+        mostBoughtItems,
+        averageListValue,
+        storeFrequency,
+        categoryStats
+      };
+    } catch (error) {
+      console.error('❌ Hiba a bevásárlási statisztikák lekérésekor:', error);
+      throw error;
+    }
+  };
+
+  // Tanulási statisztikák megjelenítése
+  const showLearningStats = async () => {
+    try {
+      console.log('🔍 Statisztikák lekérése indítása...');
+      const stats = await getLearningStats();
+      console.log('📊 Statisztikák lekérve:', stats);
+      
+      const { totalExamples, recentExamples, commonCorrections } = stats;
+      
+      let message = `📊 Tanulási statisztikák:\n\n`;
+      message += `🔢 Összes példa: ${totalExamples}\n\n`;
+      
+      if (recentExamples.length > 0) {
+        message += `📋 Legutóbbi példák:\n`;
+        recentExamples.forEach((example, index) => {
+          const originalName = example.original?.items?.[0]?.name || 'N/A';
+          const correctedName = example.corrected?.items?.[0]?.name || 'N/A';
+          message += `${index + 1}. ${originalName} → ${correctedName}\n`;
+        });
+        message += `\n`;
+      }
+      
+      const correctionEntries = Object.entries(commonCorrections);
+      if (correctionEntries.length > 0) {
+        message += `🔧 Gyakori javítások:\n`;
+        correctionEntries.forEach(([correction, count]) => {
+          message += `${correction} (${count}x)\n`;
+        });
+      } else if (totalExamples === 0) {
+        message += `📝 Még nincsenek tanulási példák.\n\n`;
+        message += `💡 Próbáld ki: Használj OCR-t egy nyugtán, majd szerkeszd a felismert termékeket!`;
+      } else {
+        message += `📝 Még nincsenek gyakori javítások.`;
+      }
+      
+      Alert.alert('📚 Tanulási Statisztikák', message, [
+        { text: 'OK', style: 'default' },
+        { 
+          text: '🧪 Teszt adatok', 
+          style: 'default',
+          onPress: async () => {
+            await addTestLearningData();
+            Alert.alert('Siker', 'Teszt tanulási adatok hozzáadva!');
+          }
+        }
+      ]);
+    } catch (error) {
+      console.error('❌ Hiba a statisztikák lekérésekor:', error);
+      Alert.alert('Hiba', `Nem sikerült betölteni a statisztikákat:\n${error.message}`);
     }
   };
 
@@ -364,7 +673,7 @@ export default function ShoppingScreen() {
         .from('shopping_lists')
         .update({
           items: JSON.stringify(updatedItems),
-          total_price: updatedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+          total_amount: updatedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
         })
         .eq('id', listId);
 
@@ -429,7 +738,7 @@ export default function ShoppingScreen() {
             {new Date(list.created_at).toLocaleDateString('hu-HU')}
           </Text>
           <Text style={styles.listTotal}>
-            Összesen: {list.total_price}Ft
+            Összesen: {list.total_amount}Ft
           </Text>
         </View>
         <TouchableOpacity
@@ -605,10 +914,10 @@ export default function ShoppingScreen() {
 
           <TouchableOpacity 
             style={styles.actionButton}
-            onPress={takePhoto}
+            onPress={showLearningStats}
           >
-            <Ionicons name="camera" size={20} color="white" />
-            <Text style={styles.buttonText}>Fotó</Text>
+            <Ionicons name="stats-chart" size={20} color="white" />
+            <Text style={styles.buttonText}>Statisztika</Text>
           </TouchableOpacity>
         </View>
 
@@ -622,7 +931,25 @@ export default function ShoppingScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={styles.actionButton} 
+            style={styles.actionButton}
+            onPress={takePhoto}
+          >
+            <Ionicons name="camera" size={20} color="white" />
+            <Text style={styles.buttonText}>Fotó</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={pickFromGallery}
+          >
+            <Ionicons name="images" size={20} color="white" />
+            <Text style={styles.buttonText}>Fotótár</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.buttonRow}>
+          <TouchableOpacity 
+            style={styles.saveButton} 
             onPress={saveList}
           >
             <Ionicons name="save" size={20} color="white" />
@@ -900,7 +1227,7 @@ export default function ShoppingScreen() {
 
             <FlatList
               data={previewItems}
-              renderItem={({ item }) => (
+              renderItem={({ item, index }) => (
                 <View style={styles.previewItem}>
                   <View style={styles.previewItemInfo}>
                     <Text style={styles.previewItemName}>{item.name}</Text>
@@ -921,6 +1248,12 @@ export default function ShoppingScreen() {
                       {item.unit || 'db'}
                     </Text>
                   </View>
+                  <TouchableOpacity 
+                    style={styles.editPreviewButton}
+                    onPress={() => editPreviewItem(item, index)}
+                  >
+                    <Ionicons name="create-outline" size={20} color="#8B5FBF" />
+                  </TouchableOpacity>
                 </View>
               )}
               keyExtractor={(item, index) => index.toString()}
@@ -942,7 +1275,23 @@ export default function ShoppingScreen() {
               
               <TouchableOpacity 
                 style={[styles.previewButton, styles.previewConfirmButton]}
-                onPress={() => {
+                onPress={async () => {
+                  // Ha van eredeti OCR eredmény és módosítás történt, tanuljunk belőle
+                  if (originalOCRResult && JSON.stringify(originalOCRResult.items) !== JSON.stringify(previewItems)) {
+                    const correctedResult = {
+                      items: previewItems,
+                      total: previewItems.reduce((sum, item) => sum + (item.price * item.quantity), 0),
+                      date: originalOCRResult.date,
+                      store: previewStoreName
+                    };
+                    await addLearningExample(originalOCRResult, correctedResult);
+                    console.log('📚 Felhasználói javítás hozzáadva a tanulási példákhoz');
+                    
+                    // Debug info
+                    const stats = await getLearningStats();
+                    console.log('📊 Tanulási statisztikák:', stats);
+                  }
+                  
                   const jsonData = JSON.stringify(previewItems);
                   importReceiptData(jsonData, previewStoreName);
                   setIsPreviewModalVisible(false);
@@ -950,6 +1299,7 @@ export default function ShoppingScreen() {
                   setImportStoreName('');
                   setPreviewItems([]);
                   setPreviewStoreName('');
+                  setOriginalOCRResult(null); // Eredeti eredmény törlése
                 }}
               >
                 <Ionicons name="checkmark" size={20} color="white" />
@@ -957,6 +1307,127 @@ export default function ShoppingScreen() {
               </TouchableOpacity>
             </View>
           </SafeAreaView>
+        </Modal>
+
+        {/* Edit Item Modal */}
+        <Modal
+          visible={isEditModalVisible}
+          animationType="slide"
+          presentationStyle="pageSheet"
+        >
+          <SafeAreaView style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Termék szerkesztése</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => {
+                  console.log('🔧 Modal bezárás');
+                  cancelEditItem();
+                }}
+              >
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+              {editingItem ? (
+                <ScrollView style={styles.editForm}>
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>Termék neve</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={editName}
+                      onChangeText={(text) => {
+                        console.log('📝 Név változtatás:', text);
+                        setEditName(text);
+                      }}
+                      placeholder="Termék neve"
+                      autoFocus={true}
+                      returnKeyType="next"
+                    />
+                  </View>
+
+                  <View style={styles.formRow}>
+                    <View style={[styles.formGroup, { flex: 1, marginRight: 10 }]}>
+                      <Text style={styles.label}>Mennyiség</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={editQuantity}
+                        onChangeText={(text) => {
+                          console.log('📊 Mennyiség változtatás:', text);
+                          setEditQuantity(text);
+                        }}
+                        placeholder="1"
+                        keyboardType="numeric"
+                        returnKeyType="next"
+                      />
+                    </View>
+
+                    <View style={[styles.formGroup, { flex: 1, marginLeft: 10 }]}>
+                      <Text style={styles.label}>Egység</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={editUnit}
+                        onChangeText={(text) => {
+                          console.log('📏 Egység változtatás:', text);
+                          setEditUnit(text);
+                        }}
+                        placeholder="db"
+                        returnKeyType="next"
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>Ár (Ft)</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={editPrice}
+                      onChangeText={(text) => {
+                        console.log('💰 Ár változtatás:', text);
+                        setEditPrice(text);
+                      }}
+                      placeholder="0"
+                      keyboardType="numeric"
+                      returnKeyType="next"
+                    />
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>Kategória</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      value={editCategory}
+                      onChangeText={(text) => {
+                        console.log('🏷️ Kategória változtatás:', text);
+                        setEditCategory(text);
+                      }}
+                      placeholder="Egyéb"
+                      returnKeyType="done"
+                    />
+                  </View>
+
+                  <View style={styles.editButtonsContainer}>
+                    <TouchableOpacity 
+                      style={[styles.editButton, styles.editCancelButton]}
+                      onPress={cancelEditItem}
+                    >
+                      <Text style={styles.editCancelButtonText}>Mégse</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={[styles.editButton, styles.editSaveButton]}
+                      onPress={saveEditedItem}
+                    >
+                      <Text style={styles.editSaveButtonText}>Mentés</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              ) : (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                  <Text>Betöltés...</Text>
+                </View>
+              )}
+            </SafeAreaView>
         </Modal>
 
         {/* Loading overlay */}
@@ -1333,6 +1804,7 @@ const styles = StyleSheet.create({
   // Modal styles
   modalContainer: {
     flex: 1,
+    backgroundColor: 'white',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1532,5 +2004,73 @@ const styles = StyleSheet.create({
   suggestionDetails: {
     fontSize: 14,
     color: '#666',
+  },
+  // Edit preview button
+  editPreviewButton: {
+    padding: 8,
+    borderRadius: 6,
+    backgroundColor: 'rgba(139, 95, 191, 0.1)',
+    marginLeft: 12,
+  },
+  // Edit form styles
+  editForm: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+  formGroup: {
+    marginBottom: 20,
+  },
+  formRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  textInput: {
+    borderWidth: 2,
+    borderColor: '#8B5FBF',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 16,
+    backgroundColor: 'white',
+    color: '#333',
+    minHeight: 44,
+  },
+  editButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 30,
+    paddingVertical: 20,
+  },
+  editButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginHorizontal: 10,
+  },
+  editCancelButton: {
+    backgroundColor: 'rgba(102, 102, 102, 0.1)',
+    borderWidth: 1,
+    borderColor: '#666',
+  },
+  editSaveButton: {
+    backgroundColor: '#8B5FBF',
+  },
+  editCancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+  },
+  editSaveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: 'white',
   },
 });

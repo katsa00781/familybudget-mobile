@@ -294,15 +294,15 @@ export default function HomeScreen({ navigation }: any) {
   };
 
   const renderStatsCard = (title: string, amount: number, icon: string, color: string) => (
-    <View style={[styles.statsCard, { backgroundColor: color }]}>
+    <View style={styles.statsCard}>
       <View style={styles.statsCardContent}>
         <View>
           <Text style={styles.statsCardTitle}>{title}</Text>
-          <Text style={styles.statsCardAmount}>
+          <Text style={[styles.statsCardAmount, { color: color }]}>
             {formatCurrency(amount)}
           </Text>
         </View>
-        <View style={styles.statsCardIcon}>
+        <View style={[styles.statsCardIcon, { backgroundColor: color }]}>
           <Ionicons name={icon as any} size={24} color="white" />
         </View>
       </View>
@@ -387,7 +387,7 @@ export default function HomeScreen({ navigation }: any) {
   if (loading) {
     return (
       <LinearGradient
-        colors={['#667eea', '#764ba2']}
+        colors={['#22D3EE', '#14B8A6', '#22C55E']}
         style={styles.container}
       >
         <SafeAreaView style={styles.safeArea}>
@@ -402,7 +402,7 @@ export default function HomeScreen({ navigation }: any) {
 
   return (
     <LinearGradient
-      colors={['#667eea', '#764ba2']}
+      colors={['#22D3EE', '#14B8A6', '#22C55E']}
       style={styles.container}
     >
       <SafeAreaView style={styles.safeArea}>
@@ -437,9 +437,9 @@ export default function HomeScreen({ navigation }: any) {
 
           {/* Stats Cards */}
           <View style={styles.statsContainer}>
-            {renderStatsCard('Tervezett havi bevétel', dashboardStats.monthlyIncome, 'arrow-up', '#10B981')}
+            {renderStatsCard('Tervezett havi bevétel', dashboardStats.monthlyIncome, 'arrow-up', '#22C55E')}
             {renderStatsCard('Tervezett havi kiadás', dashboardStats.monthlyExpenses, 'arrow-down', '#EF4444')}
-            {renderStatsCard('Tervezett havi megtakarítás', dashboardStats.savings, 'trophy', '#8B5CF6')}
+            {renderStatsCard('Tervezett havi megtakarítás', dashboardStats.savings, 'trophy', '#14B8A6')}
           </View>
 
           {/* Quick Actions */}
@@ -561,17 +561,20 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     marginTop: 16,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   header: {
     paddingHorizontal: 20,
     paddingVertical: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    paddingTop: 60,
     alignItems: 'center',
   },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 10,
   },
   logoContainer: {
     width: 32,
@@ -583,27 +586,34 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     color: 'white',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
   },
   headerDate: {
-    fontSize: 14,
+    fontSize: 16,
     color: 'rgba(255, 255, 255, 0.8)',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   statsContainer: {
     paddingHorizontal: 20,
     marginBottom: 24,
   },
   statsCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 12,
     padding: 20,
     marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.15,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 5,
   },
   statsCardContent: {
     flexDirection: 'row',
@@ -612,21 +622,26 @@ const styles = StyleSheet.create({
   },
   statsCardTitle: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: '#666',
     marginBottom: 4,
+    fontWeight: '500',
   },
   statsCardAmount: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: 'white',
+    color: '#333',
   },
   statsCardIcon: {
-    width: 40,
-    height: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   quickActionsContainer: {
     paddingHorizontal: 20,
@@ -639,16 +654,16 @@ const styles = StyleSheet.create({
   },
   quickAction: {
     width: (width - 60) / 2,
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
   },
   quickActionIcon: {
     width: 48,
@@ -657,6 +672,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   quickActionText: {
     fontSize: 14,
@@ -665,16 +685,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   sectionContainer: {
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     marginHorizontal: 20,
     marginBottom: 16,
     borderRadius: 12,
     padding: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
   },
   sectionTitle: {
     fontSize: 18,
@@ -717,9 +737,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   modalTitle: {
     fontSize: 18,
@@ -741,17 +766,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 12,
     marginBottom: 8,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   shoppingItemChecked: {
-    backgroundColor: '#f0f9ff',
+    backgroundColor: 'rgba(240, 249, 255, 0.95)',
     opacity: 0.7,
   },
   itemCheckbox: {
@@ -787,9 +812,14 @@ const styles = StyleSheet.create({
   },
   totalContainer: {
     padding: 16,
-    backgroundColor: 'white',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderTopWidth: 1,
     borderTopColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   totalText: {
     fontSize: 18,
