@@ -22,13 +22,29 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { supabase } from '../lib/supabase';
+import { supabase, ensureValidSession } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import processReceiptImageOCR, { addLearningExample, getLearningStats, addTestLearningData } from '../lib/receiptOCR_clean';
 
 export default function ShoppingScreen() {
   // Auth context
   const { user } = useAuth();
+  
+  // Helper function to ensure valid session before API calls
+  const withValidSession = async (operation: () => Promise<any>) => {
+    try {
+      const session = await ensureValidSession();
+      if (!session) {
+        Alert.alert('Hiba', 'A bejelentkezési munkamenet lejárt. Kérjük, jelentkezzen be újra.');
+        return null;
+      }
+      return await operation();
+    } catch (error) {
+      console.error('Session validation error:', error);
+      Alert.alert('Hiba', 'Hálózati kapcsolat hiba. Ellenőrizze az internetkapcsolatot.');
+      return null;
+    }
+  };
   
   // Keep all existing state and functions as they are...
   const [activeTab, setActiveTab] = useState('new');
@@ -72,11 +88,12 @@ export default function ShoppingScreen() {
   const loadShoppingLists = async () => {
     if (!user?.id) return;
     
-    try {
+    const result = await withValidSession(async () => {
       const { data, error } = await supabase
         .from('shopping_lists')
         .select('*')
         .eq('user_id', user?.id)
+        .eq('completed', false) // Csak aktív (nem befejezett) listák
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -87,14 +104,16 @@ export default function ShoppingScreen() {
       }));
 
       setLists(parsedLists);
-    } catch (error) {
-      console.error('Error loading shopping lists:', error);
-      Alert.alert('Hiba', 'Nem sikerült betölteni a bevásárló listákat');
+      return parsedLists;
+    });
+
+    if (result === null) {
+      console.error('Failed to load shopping lists due to session issues');
     }
   };
 
   const loadProducts = async () => {
-    try {
+    const result = await withValidSession(async () => {
       const { data, error } = await supabase
         .from('products')
         .select('*')
@@ -112,9 +131,11 @@ export default function ShoppingScreen() {
       }, []);
 
       setProducts(uniqueProducts);
-    } catch (error) {
-      console.error('Error loading products:', error);
-      Alert.alert('Hiba', 'Nem sikerült betölteni a termékeket');
+      return uniqueProducts;
+    });
+
+    if (result === null) {
+      console.error('Failed to load products due to session issues');
     }
   };
 
@@ -196,7 +217,8 @@ export default function ShoppingScreen() {
           user_id: user?.id,
           name: newListName,
           items: JSON.stringify(newItems),
-          total_amount: newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+          total_amount: newItems.reduce((sum, item) => sum + (item.price * item.quantity), 0),
+          completed: false // Tervezési fázis - még nem vásároltunk
         });
 
       if (error) throw error;
@@ -239,6 +261,36 @@ export default function ShoppingScreen() {
     );
   };
 
+  const completeList = async (listId) => {
+    Alert.alert(
+      'Lista befejezése',
+      'Befejezted a bevásárlást? A lista készre lesz jelölve.',
+      [
+        { text: 'Mégse', style: 'cancel' },
+        {
+          text: 'Kész',
+          style: 'default',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('shopping_lists')
+                .update({ completed: true })
+                .eq('id', listId);
+
+              if (error) throw error;
+
+              loadShoppingLists();
+              Alert.alert('Siker', 'A bevásárlás befejezve! Most feldolgozhatod a blokkot.');
+            } catch (error) {
+              console.error('Error completing list:', error);
+              Alert.alert('Hiba', 'Nem sikerült befejezni a listát');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const addProductToList = (product) => {
     const newItem = {
       id: Date.now().toString(),
@@ -268,55 +320,113 @@ export default function ShoppingScreen() {
         throw new Error('A JSON adat nem egy tömb');
       }
 
-      const formattedItems = items.map((item, index) => ({
-        id: `${Date.now()}_${index}`,
-        name: item.name || 'Névtelen termék',
-        quantity: parseInt(item.quantity) || 1,
-        unit: item.unit || 'db',
-        price: parseFloat(item.price) || 0,
-        category: item.category || 'Egyéb',
-        checked: false
-      }));
+      const purchaseDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+      let savedItems = 0;
+      let updatedProducts = 0;
 
-      // Automatikusan mentjük a listát
-      const listName = storeName ? `${storeName} - ${new Date().toLocaleDateString('hu-HU')}` : `Importált lista - ${new Date().toLocaleDateString('hu-HU')}`;
+      // Minden terméket feldolgozunk
+      for (const item of items) {
+        const itemName = item.name || 'Névtelen termék';
+        const itemQuantity = parseInt(item.quantity) || 1;
+        const itemUnit = item.unit || 'db';
+        const itemPrice = parseFloat(item.price) || 0;
+        const itemCategory = item.category || 'Egyéb';
+        const unitPrice = itemQuantity > 0 ? itemPrice / itemQuantity : itemPrice;
 
-      const { error } = await supabase
-        .from('shopping_lists')
-        .insert({
-          user_id: user?.id,
-          name: listName,
-          items: JSON.stringify(formattedItems),
-          total_amount: formattedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0)
-        });
+        try {
+          // 1. Mentés shopping_statistics táblába (minden vásárlás külön rekord)
+          const { error: statsError } = await supabase
+            .from('shopping_statistics')
+            .insert({
+              user_id: user.id,
+              shopping_date: purchaseDate,
+              product_name: itemName,
+              product_category: itemCategory,
+              brand: null, // Ha van a JSON-ben, később hozzáadhatjuk
+              store_name: storeName || 'Ismeretlen bolt',
+              quantity: itemQuantity,
+              unit: itemUnit,
+              unit_price: unitPrice,
+              total_price: itemPrice
+            });
 
-      if (error) throw error;
+          if (statsError) {
+            console.warn('Error saving to shopping_statistics:', statsError);
+          } else {
+            savedItems++;
+          }
 
-      // Termékek mentése az adatbázisba
-      for (const item of formattedItems) {
-        const { error: productError } = await supabase
-          .from('products')
-          .upsert({
-            name: item.name,
-            category: item.category,
-            unit: item.unit,
-            price: item.price
-          }, {
-            onConflict: 'name'
-          });
+          // 2. Termék mentése/frissítése products táblában (legdrágább ár logikával)
+          // Először lekérjük a meglévő terméket
+          const { data: existingProduct, error: fetchError } = await supabase
+            .from('products')
+            .select('*')
+            .eq('name', itemName)
+            .eq('user_id', user.id)
+            .single();
 
-        if (productError) {
-          console.warn('Error saving product:', productError);
+          if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = no rows found
+            console.warn('Error fetching existing product:', fetchError);
+            continue;
+          }
+
+          const productData = {
+            user_id: user.id,
+            name: itemName,
+            category: itemCategory,
+            unit: itemUnit,
+            price: Math.round(unitPrice), // Egységár egészre kerekítve
+            store_name: storeName || 'Ismeretlen bolt',
+            last_seen_at: new Date().toISOString()
+          };
+
+          if (existingProduct) {
+            // Ha létezik, csak akkor frissítjük, ha ez drágább
+            if (unitPrice > (existingProduct.price || 0)) {
+              const { error: updateError } = await supabase
+                .from('products')
+                .update({
+                  price: Math.round(unitPrice),
+                  store_name: storeName || existingProduct.store_name,
+                  last_seen_at: new Date().toISOString()
+                })
+                .eq('id', existingProduct.id);
+
+              if (updateError) {
+                console.warn('Error updating product:', updateError);
+              } else {
+                updatedProducts++;
+              }
+            }
+          } else {
+            // Új termék beszúrása
+            const { error: insertError } = await supabase
+              .from('products')
+              .insert(productData);
+
+            if (insertError) {
+              console.warn('Error inserting new product:', insertError);
+            } else {
+              updatedProducts++;
+            }
+          }
+
+        } catch (itemError) {
+          console.error('Error processing item:', itemName, itemError);
         }
       }
 
-      loadShoppingLists();
+      // Termékek újratöltése hogy a felhasználó lássa az új termékeket
       loadProducts();
       setIsImportModalVisible(false);
-      Alert.alert('Siker', `A ${listName} lista sikeresen importálva!`);
+      
+      Alert.alert(
+        'Sikeres feldolgozás!', 
+        `Statisztika: ${savedItems} tétel mentve\nTermékek: ${updatedProducts} termék frissítve/hozzáadva\n\nMost már használhatod ezeket a termékeket a bevásárlólistáidban!`
+      );
     } catch (error) {
       console.error('Error importing receipt data:', error);
-      Alert.alert('Hiba', 'Nem sikerült importálni az adatokat');
+      Alert.alert('Hiba', 'Nem sikerült importálni az adatokat: ' + error.message);
     } finally {
       setIsLoading(false);
     }
@@ -568,9 +678,9 @@ export default function ShoppingScreen() {
 
       // Leggyakoribb termékek (top 10)
       const mostBoughtItems = Object.entries(itemFrequency)
-        .sort(([,a], [,b]) => b - a)
+        .sort(([,a], [,b]) => (b as number) - (a as number))
         .slice(0, 10)
-        .map(([name, count]) => ({ name, count }));
+        .map(([name, count]) => ({ name, count: count as number }));
 
       const averageListValue = totalLists > 0 ? Math.round(totalAmount / totalLists) : 0;
 
@@ -730,23 +840,36 @@ export default function ShoppingScreen() {
   );
 
   const renderSavedList = ({ item: list }) => (
-    <View style={styles.savedListContainer}>
+    <View style={[styles.savedListContainer, list.completed && styles.completedListContainer]}>
       <View style={styles.listHeader}>
         <View style={styles.listHeaderContent}>
-          <Text style={styles.listTitle}>{list.name}</Text>
+          <Text style={[styles.listTitle, list.completed && styles.completedListTitle]}>
+            {list.completed ? '✅ ' : ''}{list.name}
+          </Text>
           <Text style={styles.listDate}>
             {new Date(list.created_at).toLocaleDateString('hu-HU')}
+            {list.completed && ' • Befejezve'}
           </Text>
           <Text style={styles.listTotal}>
             Összesen: {list.total_amount}Ft
           </Text>
         </View>
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={() => deleteList(list.id)}
-        >
-          <Ionicons name="trash" size={20} color="#ff4444" />
-        </TouchableOpacity>
+        <View style={styles.listActions}>
+          {!list.completed && (
+            <TouchableOpacity
+              style={styles.completeButton}
+              onPress={() => completeList(list.id)}
+            >
+              <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={() => deleteList(list.id)}
+          >
+            <Ionicons name="trash" size={20} color="#ff4444" />
+          </TouchableOpacity>
+        </View>
       </View>
       
       {/* Lista elemek map-pel, nem FlatList-tel a görgethetőség miatt */}
@@ -2072,5 +2195,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: 'white',
+  },
+  listActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  completeButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  completedListContainer: {
+    opacity: 0.7,
+    borderColor: 'rgba(76, 175, 80, 0.3)',
+  },
+  completedListTitle: {
+    color: 'rgba(255, 255, 255, 0.8)',
   },
 });

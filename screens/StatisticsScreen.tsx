@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../lib/supabase';
+import { supabase, ensureValidSession } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { ShoppingStatistics, InflationStats } from '../types/database';
 
@@ -58,6 +58,25 @@ interface PersonalInflationData {
 const StatisticsScreen = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
+
+  // Helper function to ensure valid session before API calls
+  const withValidSession = async (operation: () => Promise<any>) => {
+    try {
+      console.log('StatisticsScreen: Validating session...');
+      const session = await ensureValidSession();
+      if (!session) {
+        console.log('StatisticsScreen: No valid session found');
+        Alert.alert('Hiba', 'A bejelentkezési munkamenet lejárt. Kérjük, jelentkezzen be újra.');
+        return null;
+      }
+      console.log('StatisticsScreen: Session valid, executing operation...');
+      return await operation();
+    } catch (error) {
+      console.error('StatisticsScreen: Session validation error:', error);
+      Alert.alert('Hiba', 'Hálózati kapcsolat hiba. Ellenőrizze az internetkapcsolatot.');
+      return null;
+    }
+  };
   const [refreshing, setRefreshing] = useState(false);
   const [statistics, setStatistics] = useState<ShoppingStatistics[]>([]);
   
@@ -81,15 +100,43 @@ const StatisticsScreen = () => {
   const [totalItems, setTotalItems] = useState(0);
   
   useEffect(() => {
-    if (user) {
-      loadStatistics();
-    }
+    let mounted = true;
+    
+    const loadData = async () => {
+      if (user && mounted) {
+        await loadStatistics();
+      } else if (!user && mounted) {
+        // If no user, still stop loading to show empty state
+        console.log('StatisticsScreen: No user, stopping loading');
+        setLoading(false);
+      }
+    };
+    
+    loadData();
+    
+    return () => {
+      mounted = false;
+    };
   }, [user, selectedPeriod]);
 
   const loadStatistics = async () => {
-    if (!user) return;
+    if (!user) {
+      console.log('StatisticsScreen: No user found, skipping load');
+      setLoading(false);
+      return;
+    }
     
+    console.log('StatisticsScreen: Starting to load statistics...');
     setLoading(true);
+    
+    // Safety timeout to prevent infinite loading
+    const timeoutId = setTimeout(() => {
+      console.log('StatisticsScreen: Loading timeout reached, forcing completion');
+      setLoading(false);
+      setStatistics([]);
+      calculateStatistics([]);
+    }, 10000); // 10 seconds timeout
+    
     try {
       const endDate = new Date();
       const startDate = new Date();
@@ -110,47 +157,37 @@ const StatisticsScreen = () => {
           break;
       }
 
-      // Fetch shopping lists with their items
+      console.log('StatisticsScreen: Date range:', startDate.toISOString().split('T')[0], 'to', endDate.toISOString().split('T')[0]);
+
+      // Direct query without session validation for debugging
+      console.log('StatisticsScreen: Querying shopping_statistics table...');
       const { data, error } = await supabase
-        .from('shopping_lists')
+        .from('shopping_statistics')
         .select('*')
         .eq('user_id', user.id)
-        .gte('created_at', startDate.toISOString())
-        .lte('created_at', endDate.toISOString())
-        .order('created_at', { ascending: false });
+        .gte('shopping_date', startDate.toISOString().split('T')[0])
+        .lte('shopping_date', endDate.toISOString().split('T')[0])
+        .order('shopping_date', { ascending: false });
 
       if (error) {
+        console.error('StatisticsScreen: Database error:', error);
         throw error;
       }
 
-      // Process the data to extract individual items
-      const enrichedData: any[] = [];
-      data?.forEach(list => {
-        try {
-          // Parse items from JSON string
-          const items = typeof list.items === 'string' ? JSON.parse(list.items) : list.items || [];
-          if (Array.isArray(items)) {
-            items.forEach(item => {
-              enrichedData.push({
-                ...item,
-                created_at: list.created_at,
-                date: list.date,
-                store_name: list.name,
-                shopping_list_id: list.id
-              });
-            });
-          }
-        } catch (e) {
-          console.error('Failed to parse items for list:', list.id, e);
-        }
-      });
-
-      setStatistics(enrichedData);
-      calculateStatistics(enrichedData);
+      console.log('StatisticsScreen: Received data:', data ? data.length : 0, 'records');
+      
+      // Data is already in the correct format for ShoppingStatistics
+      setStatistics(data || []);
+      calculateStatistics(data || []);
+      console.log('StatisticsScreen: Successfully loaded statistics');
     } catch (error) {
-      console.error('Error loading statistics:', error);
-      Alert.alert('Hiba', 'Nem sikerült betölteni a statisztikákat');
+      console.error('StatisticsScreen: Error loading statistics:', error);
+      setStatistics([]);
+      calculateStatistics([]);
+      Alert.alert('Hiba', 'Nem sikerült betölteni a statisztikákat: ' + error.message);
     } finally {
+      clearTimeout(timeoutId);
+      console.log('StatisticsScreen: Setting loading to false');
       setLoading(false);
     }
   };
@@ -161,8 +198,11 @@ const StatisticsScreen = () => {
     setRefreshing(false);
   };
 
-  const calculateStatistics = (data: any[]) => {
+  const calculateStatistics = (data: ShoppingStatistics[]) => {
+    console.log('StatisticsScreen: calculateStatistics called with', data.length, 'records');
+    
     if (data.length === 0) {
+      console.log('StatisticsScreen: No data, setting empty stats');
       setCategoryStats([]);
       setMonthlyStats([]);
       setTopProducts([]);
@@ -172,8 +212,7 @@ const StatisticsScreen = () => {
       return;
     }
 
-    // Process individual items
-    const allItems: any[] = [];
+    // Process individual items - data is already individual statistics records
     let totalSpent = 0;
     let totalItems = 0;
     const monthlyData = new Map<string, { total: number; count: number }>();
@@ -188,27 +227,25 @@ const StatisticsScreen = () => {
     }>();
     const storeData = new Map<string, { total: number; visits: Set<string> }>();
 
-    // Process each shopping list item
-    data.forEach(item => {
-      if (!item || !item.created_at) return;
+    // Process each shopping statistics record
+    data.forEach(record => {
+      if (!record || !record.shopping_date) return;
       
-      // Add item to the all items array
-      allItems.push(item);
       totalItems++;
       
       // Calculate item price
-      const itemPrice = (parseFloat(item.price) || 0);
+      const itemPrice = record.total_price || 0;
       totalSpent += itemPrice;
       
       // Store statistics
-      const storeName = item.store_name || 'Ismeretlen bolt';
+      const storeName = record.store_name || 'Ismeretlen bolt';
       const storeStats = storeData.get(storeName) || { total: 0, visits: new Set() };
       storeStats.total += itemPrice;
-      storeStats.visits.add(item.shopping_list_id || item.id); // Use shopping_list_id to count unique visits
+      storeStats.visits.add(record.shopping_date); // Use shopping_date as unique visit identifier
       storeData.set(storeName, storeStats);
       
       // Monthly statistics
-      const date = new Date(item.created_at);
+      const date = new Date(record.shopping_date);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       const monthStats = monthlyData.get(monthKey) || { total: 0, count: 0 };
       monthStats.total += itemPrice;
@@ -216,28 +253,28 @@ const StatisticsScreen = () => {
       monthlyData.set(monthKey, monthStats);
       
       // Category statistics
-      const category = item.category || 'Egyéb';
+      const category = record.product_category || 'Egyéb';
       const categoryStats = categoryData.get(category) || { total: 0, count: 0 };
       categoryStats.total += itemPrice;
-      categoryStats.count += (parseFloat(item.quantity) || 1);
+      categoryStats.count += record.quantity;
       categoryData.set(category, categoryStats);
       
       // Product statistics
-      const productName = item.name || 'Ismeretlen termék';
+      const productName = record.product_name;
       const productStats = productData.get(productName) || { 
         total: 0, 
         quantity: 0, 
-        unit: item.unit || 'db', 
-        lastDate: item.created_at,
+        unit: record.unit || 'db', 
+        lastDate: record.shopping_date,
         price: 0,
         count: 0
       };
       productStats.total += itemPrice;
-      productStats.quantity += (parseFloat(item.quantity) || 1);
+      productStats.quantity += record.quantity;
       productStats.count += 1;
-      productStats.price += (parseFloat(item.price) || 0);
-      if (new Date(item.created_at) > new Date(productStats.lastDate)) {
-        productStats.lastDate = item.created_at;
+      productStats.price += itemPrice;
+      if (new Date(record.shopping_date) > new Date(productStats.lastDate)) {
+        productStats.lastDate = record.shopping_date;
       }
       productData.set(productName, productStats);
     });
@@ -299,10 +336,23 @@ const StatisticsScreen = () => {
     setStoreStats(storeStatsArray);
     
     // Calculate inflation data
-    calculateInflation(allItems);
+    console.log('StatisticsScreen: Finished calculating basic stats, now calculating inflation');
+    try {
+      calculateInflation(data);
+      console.log('StatisticsScreen: Inflation calculation completed');
+    } catch (inflationError) {
+      console.error('StatisticsScreen: Error in inflation calculation:', inflationError);
+      // Set default inflation data on error
+      setInflationData({
+        overallInflationRate: 0,
+        topInflationProducts: [],
+        categoryInflation: [],
+        monthlyInflationTrend: [],
+      });
+    }
   };
 
-  const calculateInflation = (data: any[]) => {
+  const calculateInflation = (data: ShoppingStatistics[]) => {
     if (data.length < 2) {
       setInflationData({
         overallInflationRate: 0,
@@ -321,22 +371,22 @@ const StatisticsScreen = () => {
     }>();
 
     // Process all items to build price history
-    data.forEach(item => {
-      const key = item.name ? `${item.name}_${item.unit || 'db'}` : '';
+    data.forEach(record => {
+      const key = record.product_name ? `${record.product_name}_${record.unit || 'db'}` : '';
       if (!key) return; // Skip items without a name
       
       if (!productPriceHistory.has(key)) {
         productPriceHistory.set(key, {
           prices: [],
-          category: item.category || 'Egyéb',
-          unit: item.unit || 'db'
+          category: record.product_category || 'Egyéb',
+          unit: record.unit || 'db'
         });
       }
       
       productPriceHistory.get(key)!.prices.push({
-        date: item.created_at || new Date().toISOString(),
-        price: parseFloat(item.unit_price) || 0,
-        quantity: parseFloat(item.quantity) || 1
+        date: record.shopping_date,
+        price: record.unit_price || 0,
+        quantity: record.quantity || 1
       });
     });
 
@@ -519,6 +569,11 @@ const StatisticsScreen = () => {
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="white" />
             <Text style={styles.loadingText}>Statisztikák betöltése...</Text>
+            <Text style={[styles.loadingText, { fontSize: 12, marginTop: 20 }]}>
+              User: {user ? 'Bejelentkezve' : 'Nincs user'}{'\n'}
+              Period: {selectedPeriod}{'\n'}
+              Stats count: {statistics.length}
+            </Text>
           </View>
         </SafeAreaView>
       </LinearGradient>

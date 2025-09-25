@@ -95,15 +95,16 @@ export interface ShoppingList {
 export interface ShoppingStatistics {
   id: string;
   user_id: string;
-  shopping_list_id: string;
   shopping_date: string; // YYYY-MM-DD
   product_name: string;
-  product_category: string;
+  product_category?: string;
+  brand?: string;
+  store_name?: string;
   quantity: number;
   unit: string;
   unit_price: number;
   total_price: number;
-  created_at: string;
+  created_at?: string;
 }
 
 export interface ProductPriceHistory {

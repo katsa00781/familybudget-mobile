@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { supabase, ensureValidSession } from '../lib/supabase';
 import { UserProfile } from '../types/database';
 
 interface AuthContextType {
@@ -20,26 +20,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionRefreshInterval, setSessionRefreshInterval] = useState<number | null>(null);
 
   useEffect(() => {
     // Get current session
     const getSession = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        // Use the enhanced session validation function
+        const validSession = await ensureValidSession();
         
-        if (error) {
-          setLoading(false);
-          return;
-        }
-
-        if (session?.user) {
-          setSession(session);
-          setUser(session.user);
-          await loadUserProfile(session.user.id);
+        if (validSession?.user) {
+          setSession(validSession);
+          setUser(validSession.user);
+          await loadUserProfile(validSession.user.id);
+          startSessionMonitoring();
+        } else {
+          // Clear any existing session data
+          setSession(null);
+          setUser(null);
+          setUserProfile(null);
+          stopSessionMonitoring();
         }
         
         setLoading(false);
       } catch (error) {
+        console.error('Session initialization error:', error);
         setLoading(false);
       }
     };
@@ -51,22 +56,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       try {
+        console.log('Auth state changed:', event, session ? 'session exists' : 'no session');
+        
         setSession(session);
         setUser(session?.user ?? null);
         
         if (session?.user) {
           await loadUserProfile(session.user.id);
+          startSessionMonitoring();
         } else {
           setUserProfile(null);
+          stopSessionMonitoring();
         }
         setLoading(false);
       } catch (error) {
+        console.error('Auth state change error:', error);
         setLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      stopSessionMonitoring();
+    };
   }, []);
+
+  const startSessionMonitoring = () => {
+    // Clear existing interval
+    if (sessionRefreshInterval) {
+      clearInterval(sessionRefreshInterval);
+    }
+
+    // Check session every 5 minutes
+    const interval = setInterval(async () => {
+      try {
+        console.log('Checking session validity...');
+        const validSession = await ensureValidSession();
+        
+        if (!validSession) {
+          console.log('Session invalid, signing out...');
+          await signOut();
+        } else {
+          console.log('Session is valid');
+          setSession(validSession);
+          setUser(validSession.user);
+        }
+      } catch (error) {
+        console.error('Session monitoring error:', error);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+
+    setSessionRefreshInterval(interval);
+  };
+
+  const stopSessionMonitoring = () => {
+    if (sessionRefreshInterval) {
+      clearInterval(sessionRefreshInterval);
+      setSessionRefreshInterval(null);
+    }
+  };
 
   const loadUserProfile = async (userId: string) => {
     try {
