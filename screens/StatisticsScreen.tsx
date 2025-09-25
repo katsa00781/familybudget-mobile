@@ -110,22 +110,45 @@ const StatisticsScreen = () => {
           break;
       }
 
+      // Fetch shopping lists with their items
       const { data, error } = await supabase
-        .from('shopping_statistics')
+        .from('shopping_lists')
         .select('*')
         .eq('user_id', user.id)
-        .gte('shopping_date', startDate.toISOString().split('T')[0])
-        .lte('shopping_date', endDate.toISOString().split('T')[0])
-        .order('shopping_date', { ascending: false });
+        .gte('created_at', startDate.toISOString())
+        .lte('created_at', endDate.toISOString())
+        .order('created_at', { ascending: false });
 
       if (error) {
         throw error;
       }
 
-      setStatistics(data || []);
-      calculateStatistics(data || []);
-      
+      // Process the data to extract individual items
+      const enrichedData: any[] = [];
+      data?.forEach(list => {
+        try {
+          // Parse items from JSON string
+          const items = typeof list.items === 'string' ? JSON.parse(list.items) : list.items || [];
+          if (Array.isArray(items)) {
+            items.forEach(item => {
+              enrichedData.push({
+                ...item,
+                created_at: list.created_at,
+                date: list.date,
+                store_name: list.name,
+                shopping_list_id: list.id
+              });
+            });
+          }
+        } catch (e) {
+          console.error('Failed to parse items for list:', list.id, e);
+        }
+      });
+
+      setStatistics(enrichedData);
+      calculateStatistics(enrichedData);
     } catch (error) {
+      console.error('Error loading statistics:', error);
       Alert.alert('Hiba', 'Nem sikerült betölteni a statisztikákat');
     } finally {
       setLoading(false);
@@ -138,7 +161,7 @@ const StatisticsScreen = () => {
     setRefreshing(false);
   };
 
-  const calculateStatistics = (data: ShoppingStatistics[]) => {
+  const calculateStatistics = (data: any[]) => {
     if (data.length === 0) {
       setCategoryStats([]);
       setMonthlyStats([]);
@@ -149,46 +172,93 @@ const StatisticsScreen = () => {
       return;
     }
 
-    // Total amounts
-    const total = data.reduce((sum, item) => sum + item.total_price, 0);
-    const itemCount = data.reduce((sum, item) => sum + item.quantity, 0);
-    setTotalSpent(total);
-    setTotalItems(itemCount);
+    // Process individual items
+    const allItems: any[] = [];
+    let totalSpent = 0;
+    let totalItems = 0;
+    const monthlyData = new Map<string, { total: number; count: number }>();
+    const categoryData = new Map<string, { total: number; count: number }>();
+    const productData = new Map<string, { 
+      total: number; 
+      quantity: number; 
+      unit: string; 
+      lastDate: string;
+      price: number;
+      count: number;
+    }>();
+    const storeData = new Map<string, { total: number; visits: Set<string> }>();
 
-    // Category statistics
-    const categoryMap = new Map<string, { total: number; count: number }>();
+    // Process each shopping list item
     data.forEach(item => {
-      const category = item.product_category || 'Egyéb';
-      const existing = categoryMap.get(category) || { total: 0, count: 0 };
-      categoryMap.set(category, {
-        total: existing.total + item.total_price,
-        count: existing.count + item.quantity
-      });
+      if (!item || !item.created_at) return;
+      
+      // Add item to the all items array
+      allItems.push(item);
+      totalItems++;
+      
+      // Calculate item price
+      const itemPrice = (parseFloat(item.price) || 0);
+      totalSpent += itemPrice;
+      
+      // Store statistics
+      const storeName = item.store_name || 'Ismeretlen bolt';
+      const storeStats = storeData.get(storeName) || { total: 0, visits: new Set() };
+      storeStats.total += itemPrice;
+      storeStats.visits.add(item.shopping_list_id || item.id); // Use shopping_list_id to count unique visits
+      storeData.set(storeName, storeStats);
+      
+      // Monthly statistics
+      const date = new Date(item.created_at);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthStats = monthlyData.get(monthKey) || { total: 0, count: 0 };
+      monthStats.total += itemPrice;
+      monthStats.count += 1;
+      monthlyData.set(monthKey, monthStats);
+      
+      // Category statistics
+      const category = item.category || 'Egyéb';
+      const categoryStats = categoryData.get(category) || { total: 0, count: 0 };
+      categoryStats.total += itemPrice;
+      categoryStats.count += (parseFloat(item.quantity) || 1);
+      categoryData.set(category, categoryStats);
+      
+      // Product statistics
+      const productName = item.name || 'Ismeretlen termék';
+      const productStats = productData.get(productName) || { 
+        total: 0, 
+        quantity: 0, 
+        unit: item.unit || 'db', 
+        lastDate: item.created_at,
+        price: 0,
+        count: 0
+      };
+      productStats.total += itemPrice;
+      productStats.quantity += (parseFloat(item.quantity) || 1);
+      productStats.count += 1;
+      productStats.price += (parseFloat(item.price) || 0);
+      if (new Date(item.created_at) > new Date(productStats.lastDate)) {
+        productStats.lastDate = item.created_at;
+      }
+      productData.set(productName, productStats);
     });
-
-    const categoryStatsArray: CategoryStats[] = Array.from(categoryMap.entries())
+    
+    // Set total values
+    setTotalSpent(totalSpent);
+    setTotalItems(totalItems);
+    
+    // Process category statistics
+    const categoryStatsArray: CategoryStats[] = Array.from(categoryData.entries())
       .map(([category, stats]) => ({
         category,
         totalAmount: stats.total,
         itemCount: stats.count,
-        percentage: (stats.total / total) * 100
+        percentage: (stats.total / totalSpent) * 100
       }))
       .sort((a, b) => b.totalAmount - a.totalAmount);
     setCategoryStats(categoryStatsArray);
-
-    // Monthly statistics (last 6 months)
-    const monthlyMap = new Map<string, { total: number; count: number }>();
-    data.forEach(item => {
-      const date = new Date(item.shopping_date);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      const existing = monthlyMap.get(monthKey) || { total: 0, count: 0 };
-      monthlyMap.set(monthKey, {
-        total: existing.total + item.total_price,
-        count: existing.count + item.quantity
-      });
-    });
-
-    const monthlyStatsArray: MonthlyStats[] = Array.from(monthlyMap.entries())
+    
+    // Process monthly statistics
+    const monthlyStatsArray: MonthlyStats[] = Array.from(monthlyData.entries())
       .map(([month, stats]) => {
         const [year, monthNum] = month.split('-');
         const daysInMonth = new Date(parseInt(year), parseInt(monthNum), 0).getDate();
@@ -202,75 +272,37 @@ const StatisticsScreen = () => {
       .sort((a, b) => b.month.localeCompare(a.month))
       .slice(0, 6);
     setMonthlyStats(monthlyStatsArray);
-
-    // Top products
-    const productMap = new Map<string, { 
-      total: number; 
-      quantity: number; 
-      unit: string; 
-      lastDate: string;
-      priceSum: number;
-      count: number;
-    }>();
     
-    data.forEach(item => {
-      const existing = productMap.get(item.product_name) || { 
-        total: 0, 
-        quantity: 0, 
-        unit: item.unit, 
-        lastDate: item.shopping_date,
-        priceSum: 0,
-        count: 0
-      };
-      productMap.set(item.product_name, {
-        total: existing.total + item.total_price,
-        quantity: existing.quantity + item.quantity,
-        unit: item.unit,
-        lastDate: item.shopping_date > existing.lastDate ? item.shopping_date : existing.lastDate,
-        priceSum: existing.priceSum + item.unit_price,
-        count: existing.count + 1
-      });
-    });
-
-    const topProductsArray: ProductStats[] = Array.from(productMap.entries())
+    // Process product statistics
+    const topProductsArray: ProductStats[] = Array.from(productData.entries())
       .map(([productName, stats]) => ({
         productName,
         totalAmount: stats.total,
         quantity: stats.quantity,
         unit: stats.unit,
-        averagePrice: stats.priceSum / stats.count,
+        averagePrice: stats.count > 0 ? stats.price / stats.count : 0,
         lastPurchase: stats.lastDate
       }))
       .sort((a, b) => b.totalAmount - a.totalAmount)
       .slice(0, 10);
     setTopProducts(topProductsArray);
-
-    // Store statistics (ha van store adat)
-    const storeMap = new Map<string, { total: number; visits: Set<string> }>();
-    data.forEach(item => {
-      // A shopping_list_id alapján számoljuk a látogatásokat
-      const store = 'Általános bolt'; // Mivel nincs store mező a statistics táblában
-      const existing = storeMap.get(store) || { total: 0, visits: new Set() };
-      existing.total += item.total_price;
-      existing.visits.add(item.shopping_list_id);
-      storeMap.set(store, existing);
-    });
-
-    const storeStatsArray: StoreStats[] = Array.from(storeMap.entries())
+    
+    // Process store statistics
+    const storeStatsArray: StoreStats[] = Array.from(storeData.entries())
       .map(([storeName, stats]) => ({
         storeName,
         totalAmount: stats.total,
         visitCount: stats.visits.size,
-        averageBasket: stats.total / stats.visits.size
+        averageBasket: stats.visits.size > 0 ? stats.total / stats.visits.size : 0
       }))
       .sort((a, b) => b.totalAmount - a.totalAmount);
     setStoreStats(storeStatsArray);
-
-    // Personal inflation calculation
-    calculateInflation(data);
+    
+    // Calculate inflation data
+    calculateInflation(allItems);
   };
 
-  const calculateInflation = (data: ShoppingStatistics[]) => {
+  const calculateInflation = (data: any[]) => {
     if (data.length < 2) {
       setInflationData({
         overallInflationRate: 0,
@@ -288,19 +320,23 @@ const StatisticsScreen = () => {
       unit: string;
     }>();
 
+    // Process all items to build price history
     data.forEach(item => {
-      const key = `${item.product_name}_${item.unit}`;
+      const key = item.name ? `${item.name}_${item.unit || 'db'}` : '';
+      if (!key) return; // Skip items without a name
+      
       if (!productPriceHistory.has(key)) {
         productPriceHistory.set(key, {
           prices: [],
-          category: item.product_category,
-          unit: item.unit
+          category: item.category || 'Egyéb',
+          unit: item.unit || 'db'
         });
       }
+      
       productPriceHistory.get(key)!.prices.push({
-        date: item.shopping_date,
-        price: item.unit_price,
-        quantity: item.quantity
+        date: item.created_at || new Date().toISOString(),
+        price: parseFloat(item.unit_price) || 0,
+        quantity: parseFloat(item.quantity) || 1
       });
     });
 
@@ -395,12 +431,14 @@ const StatisticsScreen = () => {
     });
   };
 
-  const calculateMonthlyInflationTrend = (data: ShoppingStatistics[]) => {
+  const calculateMonthlyInflationTrend = (data: any[]) => {
     // Group by month and calculate average prices
     const monthlyPrices = new Map<string, Map<string, number[]>>();
     
     data.forEach(item => {
-      const date = new Date(item.shopping_date);
+      if (!item.created_at || !item.name || !item.unit_price) return;
+      
+      const date = new Date(item.created_at);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       
       if (!monthlyPrices.has(monthKey)) {
@@ -408,13 +446,13 @@ const StatisticsScreen = () => {
       }
       
       const monthData = monthlyPrices.get(monthKey)!;
-      const productKey = `${item.product_name}_${item.unit}`;
+      const productKey = `${item.name}_${item.unit || 'db'}`;
       
       if (!monthData.has(productKey)) {
         monthData.set(productKey, []);
       }
       
-      monthData.get(productKey)!.push(item.unit_price);
+      monthData.get(productKey)!.push(parseFloat(item.unit_price) || 0);
     });
 
     // Calculate monthly inflation rates
