@@ -158,3 +158,4 @@ Ez a projekt MIT licenc alatt áll. Lásd a [LICENSE](LICENSE) fájlt a részlet
 ---
 
 ## � Készíts okos pénzügyi döntéseket a Családi Költségvetés alkalmazással!
+# FamilyBudgetIOS
