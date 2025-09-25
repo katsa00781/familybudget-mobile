@@ -1,6 +1,6 @@
 # 📱 Családi Költségvetés - Mobile App
 
-Modern React Native mobilalkalmazás a családi költségvetés kezelésére és megtakarítási célok ny## 💰 Készíts okos pénzügyi döntéseket a Családi Költségvetés alkalmazássalmon követésére.
+Modern React Native mobilalkalmazás a családi költségvetés kezelésére, bevásárlólisták létrehozására és megtakarítási célok követésére.
 
 ## ✨ Főbb funkciók
 
@@ -8,9 +8,12 @@ Modern React Native mobilalkalmazás a családi költségvetés kezelésére és
 - 💰 **Költségvetés tervezés**: Havi bevételek és kiadások nyomon követése
 - 🎯 **Megtakarítási célok**: Célok beállítása és előrehaladás követése
 - 📊 **Pénzügyi áttekintés**: Egyenleg és statisztikák megjelenítése
-- 🛒 **Bevásárlólisták**: Vásárlási tervezés és költség becslés
-- � **OCR Receipt Scanner**: Blokkok fényképezése és automatikus termék felismerés
-- �📈 **Tranzakciók**: Részletes pénzügyi tranzakció történet  
+- 🛒 **4-lépcsős bevásárlási workflow**: 
+  - Lista tervezés → Bevásárlás → OCR feldolgozás → Statisztika elemzés
+- 📱 **OCR Receipt Scanner**: Blokkok fényképezése és automatikus termék felismerés
+- 📈 **Tranzakciók**: Részletes pénzügyi tranzakció történet  
+- 📊 **Infláció tracking**: Személyes áremelkedés követés termékek szerint
+- 🔄 **Session Management**: Automatikus token refresh és session monitoring
 - 🎨 **Modern UI**: Tiszta, intuitív felhasználói felület magyar nyelven
 
 ## 🚀 Gyors indítás
@@ -157,5 +160,4 @@ Ez a projekt MIT licenc alatt áll. Lásd a [LICENSE](LICENSE) fájlt a részlet
 
 ---
 
-## � Készíts okos pénzügyi döntéseket a Családi Költségvetés alkalmazással!
-# FamilyBudgetIOS
+**💰 Készíts okos pénzügyi döntéseket a Családi Költségvetés alkalmazással!**
