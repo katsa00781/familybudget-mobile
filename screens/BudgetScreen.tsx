@@ -468,6 +468,9 @@ const BudgetScreen: React.FC = () => {
       return;
     }
 
+    console.log('BudgetScreen: Saving budget with name:', budgetName);
+    console.log('BudgetScreen: Selected budget ID:', selectedBudgetId);
+
     setIsLoading(true);
     try {
       const allItems = budgetData.flatMap(category => category.items);
@@ -480,6 +483,8 @@ const BudgetScreen: React.FC = () => {
         name: budgetName || `Költségvetés ${new Date().toLocaleDateString('hu-HU')}`,
         description: budgetDescription || null
       };
+
+      console.log('BudgetScreen: Budget to save:', budgetToSave);
 
       let data, error;
 
@@ -511,8 +516,11 @@ const BudgetScreen: React.FC = () => {
         error = insertResult.error;
         
         if (!error && data && data.length > 0) {
+          console.log('BudgetScreen: New budget saved successfully:', data[0]);
           Alert.alert('Siker', 'Új költségvetés sikeresen elmentve!');
           setSelectedBudgetId(data[0].id);
+          // Frissítsük a mentett költségvetések listáját
+          await loadData();
         }
       }
 
@@ -1134,7 +1142,10 @@ const BudgetScreen: React.FC = () => {
                   ]}>
                     {budget.name || `Költségvetés ${budget.id.slice(0, 8)}`}
                   </Text>
-                  <Text style={styles.budgetOptionAmount}>
+                  <Text style={[
+                    styles.budgetOptionAmount,
+                    selectedBudgetId === budget.id && styles.selectedBudgetOptionAmount
+                  ]}>
                     {formatCurrency(budget.total_amount)}
                   </Text>
                 </TouchableOpacity>
@@ -2238,7 +2249,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   budgetOption: {
-    backgroundColor: 'rgba(20, 184, 166, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
     borderRadius: 8,
     padding: 12,
     marginRight: 12,
@@ -2246,12 +2257,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(20, 184, 166, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   activeBudgetOption: {
     backgroundColor: '#14B8A6',
   },
   budgetOptionText: {
-    color: '#333',
+    color: '#1F2937',
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 4,
@@ -2260,8 +2276,9 @@ const styles = StyleSheet.create({
     color: 'white',
   },
   budgetOptionAmount: {
-    color: '#666',
+    color: '#4B5563',
     fontSize: 12,
+    fontWeight: '500',
   },
   scrollView: {
     flex: 1,
@@ -2663,6 +2680,10 @@ const styles = StyleSheet.create({
   },
   selectedBudgetOptionText: {
     color: '#14B8A6',
+  },
+  selectedBudgetOptionAmount: {
+    color: '#0D9488',
+    fontWeight: '600',
   },
   
   // Balance styles
