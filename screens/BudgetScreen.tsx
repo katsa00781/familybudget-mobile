@@ -264,8 +264,16 @@ const BudgetScreen: React.FC = () => {
     
     try {
       setLoading(true);
+      console.log('BudgetScreen loadData: Loading started');
+
+      // Timeout mechanizmus - ha 15 mp alatt nem tölt be, akkor leállítjuk a loading-ot
+      const timeoutId = setTimeout(() => {
+        console.error('BudgetScreen loadData: Loading timeout after 15 seconds');
+        setLoading(false);
+      }, 15000);
 
       // Mentett költségvetések betöltése
+      console.log('BudgetScreen loadData: Loading budget plans');
       const { data: budgetData, error: budgetError } = await supabase
         .from('budget_plans')
         .select('*')
@@ -273,10 +281,14 @@ const BudgetScreen: React.FC = () => {
         .order('created_at', { ascending: false });
 
       if (budgetError) {
+        console.error('BudgetScreen loadData: Budget error', budgetError);
         // Silent error handling
+      } else {
+        console.log('BudgetScreen loadData: Budget data loaded', budgetData?.length);
       }
 
       // Bevételi tervek betöltése
+      console.log('BudgetScreen loadData: Loading income plans');
       const { data: incomeData, error: incomeError } = await supabase
         .from('income_plans')
         .select('*')
@@ -284,7 +296,10 @@ const BudgetScreen: React.FC = () => {
         .order('created_at', { ascending: false });
 
       if (incomeError) {
+        console.error('BudgetScreen loadData: Income error', incomeError);
         // Silent error handling
+      } else {
+        console.log('BudgetScreen loadData: Income data loaded', incomeData?.length);
       }
 
       setSavedBudgets(budgetData || []);
@@ -292,6 +307,7 @@ const BudgetScreen: React.FC = () => {
 
       // Ha van mentett költségvetés, betöltjük az elsőt
       if (budgetData && budgetData.length > 0) {
+        console.log('BudgetScreen loadData: Loading first budget');
         loadBudget(budgetData[0]);
       }
 
@@ -299,12 +315,19 @@ const BudgetScreen: React.FC = () => {
       if (incomeData && incomeData.length > 0) {
         setExpectedIncome(incomeData[0].total_income || 0);
         setSelectedIncomeId(incomeData[0].id);
+        console.log('BudgetScreen loadData: Income set to', incomeData[0].total_income);
       }
 
+      // Sikeres betöltés után töröljük a timeout-ot
+      clearTimeout(timeoutId);
+      console.log('BudgetScreen loadData: Loading completed successfully');
+
     } catch (error) {
+      console.error('BudgetScreen loadData: Unexpected error', error);
       // Silent error handling
     } finally {
       setLoading(false);
+      console.log('BudgetScreen loadData: Loading state set to false');
     }
   };
 
@@ -1122,38 +1145,6 @@ const BudgetScreen: React.FC = () => {
 
     return (
       <>
-        {/* Budget Selector */}
-        {savedBudgets.length > 0 && (
-          <View style={styles.budgetSelectorContainer}>
-            <Text style={styles.budgetSelectorTitle}>Költségvetés:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.budgetSelector}>
-              {savedBudgets.map((budget) => (
-                <TouchableOpacity
-                  key={budget.id}
-                  style={[
-                    styles.budgetOption,
-                    selectedBudgetId === budget.id && styles.selectedBudgetOption
-                  ]}
-                  onPress={() => loadBudget(budget)}
-                >
-                  <Text style={[
-                    styles.budgetOptionText,
-                    selectedBudgetId === budget.id && styles.selectedBudgetOptionText
-                  ]}>
-                    {budget.name || `Költségvetés ${budget.id.slice(0, 8)}`}
-                  </Text>
-                  <Text style={[
-                    styles.budgetOptionAmount,
-                    selectedBudgetId === budget.id && styles.selectedBudgetOptionAmount
-                  ]}>
-                    {formatCurrency(budget.total_amount)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
         {/* Summary */}
         <View style={styles.summaryContainer}>
           <View style={styles.balanceContainer}>
@@ -1227,6 +1218,31 @@ const BudgetScreen: React.FC = () => {
                     </View>
                   </TouchableOpacity>
                 ))}
+                
+                {/* Add new item button */}
+                <TouchableOpacity
+                  style={styles.addItemButton}
+                  onPress={() => {
+                    console.log('💰 Adding new budget item to category:', categoryIndex);
+                    console.log('📋 Category:', category.name);
+                    addItem(categoryIndex);
+                    // Automatikusan megnyitjuk az edit modalt az új elemhez
+                    const newItemIndex = category.items.length;
+                    console.log('🆕 New item created:', {
+                      amount: 0,
+                      category: category.name,
+                      id: 'generated',
+                      subcategory: 'Új tétel',
+                      type: ''
+                    });
+                    console.log('✅ Budget data updated, new items count:', newItemIndex + 1);
+                    console.log('📝 Opening edit modal for new item at index:', newItemIndex);
+                    setEditingItem({ categoryIndex, itemIndex: newItemIndex });
+                  }}
+                >
+                  <Ionicons name="add" size={16} color="#14B8A6" />
+                  <Text style={styles.addItemText}>Új tétel</Text>
+                </TouchableOpacity>
               </View>
             </View>
           ))}
@@ -1608,6 +1624,15 @@ const BudgetScreen: React.FC = () => {
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="white" />
             <Text style={styles.loadingText}>Betöltés...</Text>
+            <TouchableOpacity 
+              style={styles.skipLoadingButton}
+              onPress={() => {
+                console.log('BudgetScreen: User manually stopped loading');
+                setLoading(false);
+              }}
+            >
+              <Text style={styles.skipLoadingText}>Kihagyás</Text>
+            </TouchableOpacity>
           </View>
         </SafeAreaView>
       </LinearGradient>
@@ -2181,6 +2206,21 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 2,
   },
+  skipLoadingButton: {
+    marginTop: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  skipLoadingText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2226,59 +2266,6 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 14,
     fontWeight: '600',
-  },
-  budgetSelectorContainer: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    marginHorizontal: 20,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  budgetSelectorTitle: {
-    color: '#333',
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 12,
-  },
-  budgetSelector: {
-    flexDirection: 'row',
-  },
-  budgetOption: {
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 8,
-    padding: 12,
-    marginRight: 12,
-    minWidth: 120,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(20, 184, 166, 0.3)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  activeBudgetOption: {
-    backgroundColor: '#14B8A6',
-  },
-  budgetOptionText: {
-    color: '#1F2937',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  activeBudgetOptionText: {
-    color: 'white',
-  },
-  budgetOptionAmount: {
-    color: '#4B5563',
-    fontSize: 12,
-    fontWeight: '500',
   },
   scrollView: {
     flex: 1,
@@ -2672,19 +2659,7 @@ const styles = StyleSheet.create({
   activeTabText: {
     color: '#FFFFFF',
   },
-  
-  // Additional budget styles
-  selectedBudgetOption: {
-    backgroundColor: 'rgba(20, 184, 166, 0.2)',
-    borderColor: '#14B8A6',
-  },
-  selectedBudgetOptionText: {
-    color: '#14B8A6',
-  },
-  selectedBudgetOptionAmount: {
-    color: '#0D9488',
-    fontWeight: '600',
-  },
+
   
   // Balance styles
   balanceContainer: {
