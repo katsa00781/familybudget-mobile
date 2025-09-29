@@ -51,11 +51,21 @@ export default function SavingsScreen() {
   const [investments, setInvestments] = useState<Investment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
   const [transactionModalVisible, setTransactionModalVisible] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<SavingsGoal | null>(null);
+  const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>(null);
 
   // Új megtakarítási cél form
   const [newGoal, setNewGoal] = useState({
+    name: '',
+    target_amount: '',
+    target_date: '',
+    category: 'general',
+  });
+
+  // Szerkesztett cél form
+  const [editedGoal, setEditedGoal] = useState({
     name: '',
     target_amount: '',
     target_date: '',
@@ -113,6 +123,8 @@ export default function SavingsScreen() {
   };
 
   const createSavingsGoal = async () => {
+    console.log('🎯 Creating savings goal with data:', newGoal);
+    
     if (!user) {
       Alert.alert('Hiba', 'Be kell jelentkezned!');
       return;
@@ -120,31 +132,143 @@ export default function SavingsScreen() {
 
     if (!newGoal.name.trim() || !newGoal.target_amount || !newGoal.target_date) {
       Alert.alert('Hiba', 'Töltsd ki az összes mezőt!');
+      console.log('❌ Validation failed - missing fields:', {
+        name: newGoal.name.trim(),
+        target_amount: newGoal.target_amount,
+        target_date: newGoal.target_date
+      });
+      return;
+    }
+
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(newGoal.target_date)) {
+      Alert.alert('Hiba', 'A dátum formátuma ÉÉÉÉ-HH-NN kell legyen (pl. 2024-12-31)');
+      return;
+    }
+
+    // Validate amount is a valid number
+    const targetAmount = parseFloat(newGoal.target_amount);
+    if (isNaN(targetAmount) || targetAmount <= 0) {
+      Alert.alert('Hiba', 'A célösszeg érvényes pozitív szám kell legyen');
       return;
     }
 
     try {
-      const { error } = await supabase
+      console.log('📡 Inserting to Supabase:', {
+        user_id: user.id,
+        name: newGoal.name,
+        target_amount: targetAmount,
+        current_amount: 0,
+        target_date: newGoal.target_date,
+        category: newGoal.category,
+      });
+
+      const { data, error } = await supabase
         .from('savings_goals')
         .insert({
           user_id: user.id,
           name: newGoal.name,
-          target_amount: parseFloat(newGoal.target_amount),
+          target_amount: targetAmount,
           current_amount: 0,
           target_date: newGoal.target_date,
           category: newGoal.category,
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Supabase error:', error);
+        throw error;
+      }
 
+      console.log('✅ Success! Data inserted:', data);
       Alert.alert('Siker', 'Megtakarítási cél létrehozva!');
       setNewGoal({ name: '', target_amount: '', target_date: '', category: 'general' });
       setModalVisible(false);
       loadSavingsGoals();
     } catch (error) {
-      console.error('Error creating savings goal:', error);
-      Alert.alert('Hiba', 'Nem sikerült létrehozni a megtakarítási célt');
+      console.log('💥 Error creating savings goal:', error);
+      Alert.alert('Hiba', `Nem sikerült létrehozni a megtakarítási célt: ${error.message || error}`);
     }
+  };
+
+  const updateSavingsGoal = async () => {
+    console.log('✏️ Updating savings goal with data:', editedGoal);
+    
+    if (!user || !editingGoal) {
+      Alert.alert('Hiba', 'Be kell jelentkezned és ki kell választanod egy célt!');
+      return;
+    }
+
+    if (!editedGoal.name.trim() || !editedGoal.target_amount || !editedGoal.target_date) {
+      Alert.alert('Hiba', 'Töltsd ki az összes mezőt!');
+      console.log('❌ Validation failed - missing fields:', {
+        name: editedGoal.name.trim(),
+        target_amount: editedGoal.target_amount,
+        target_date: editedGoal.target_date
+      });
+      return;
+    }
+
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(editedGoal.target_date)) {
+      Alert.alert('Hiba', 'A dátum formátuma ÉÉÉÉ-HH-NN kell legyen (pl. 2024-12-31)');
+      return;
+    }
+
+    // Validate amount is a valid number
+    const targetAmount = parseFloat(editedGoal.target_amount);
+    if (isNaN(targetAmount) || targetAmount <= 0) {
+      Alert.alert('Hiba', 'A célösszeg érvényes pozitív szám kell legyen');
+      return;
+    }
+
+    try {
+      console.log('📡 Updating in Supabase:', {
+        id: editingGoal.id,
+        name: editedGoal.name,
+        target_amount: targetAmount,
+        target_date: editedGoal.target_date,
+        category: editedGoal.category,
+      });
+
+      const { data, error } = await supabase
+        .from('savings_goals')
+        .update({
+          name: editedGoal.name,
+          target_amount: targetAmount,
+          target_date: editedGoal.target_date,
+          category: editedGoal.category,
+        })
+        .eq('id', editingGoal.id)
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('❌ Supabase error:', error);
+        throw error;
+      }
+
+      console.log('✅ Success! Data updated:', data);
+      Alert.alert('Siker', 'Megtakarítási cél módosítva!');
+      setEditedGoal({ name: '', target_amount: '', target_date: '', category: 'general' });
+      setEditModalVisible(false);
+      setEditingGoal(null);
+      loadSavingsGoals();
+    } catch (error) {
+      console.error('💥 Error updating savings goal:', error);
+      Alert.alert('Hiba', `Nem sikerült módosítani a megtakarítási célt: ${error.message || error}`);
+    }
+  };
+
+  const openEditModal = (goal: SavingsGoal) => {
+    setEditingGoal(goal);
+    setEditedGoal({
+      name: goal.name,
+      target_amount: goal.target_amount.toString(),
+      target_date: goal.target_date,
+      category: goal.category,
+    });
+    setEditModalVisible(true);
   };
 
   const addTransaction = async () => {
@@ -349,12 +473,20 @@ export default function SavingsScreen() {
                   <Text style={styles.goalCategory}>{getCategoryName(goal.category)}</Text>
                 </View>
               </View>
-              <TouchableOpacity
-                onPress={() => deleteGoal(goal.id)}
-                style={styles.deleteButton}
-              >
-                <Ionicons name="trash-outline" size={20} color="#ef4444" />
-              </TouchableOpacity>
+              <View style={styles.goalActions}>
+                <TouchableOpacity
+                  onPress={() => openEditModal(goal)}
+                  style={styles.editButton}
+                >
+                  <Ionicons name="create-outline" size={20} color="#f59e0b" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => deleteGoal(goal.id)}
+                  style={styles.deleteButton}
+                >
+                  <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={styles.goalProgress}>
@@ -450,7 +582,7 @@ export default function SavingsScreen() {
 
             <TextInput
               style={styles.input}
-              placeholder="Céldátum (ÉÉÉÉ-HH-NN)"
+              placeholder="Céldátum (pl. 2025-06-15)"
               value={newGoal.target_date}
               onChangeText={(text) => setNewGoal({ ...newGoal, target_date: text })}
             />
@@ -500,6 +632,93 @@ export default function SavingsScreen() {
                 onPress={createSavingsGoal}
               >
                 <Text style={styles.createButtonText}>Létrehozás</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Megtakarítási cél szerkesztése modal */}
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={editModalVisible}
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Megtakarítási cél szerkesztése</Text>
+            
+            <TextInput
+              style={styles.input}
+              placeholder="Cél neve (pl. Új autó)"
+              value={editedGoal.name}
+              onChangeText={(text) => setEditedGoal({ ...editedGoal, name: text })}
+            />
+            
+            <TextInput
+              style={styles.input}
+              placeholder="Célösszeg (Ft)"
+              value={editedGoal.target_amount}
+              onChangeText={(text) => setEditedGoal({ ...editedGoal, target_amount: text })}
+              keyboardType="numeric"
+            />
+
+            <TextInput
+              style={styles.input}
+              placeholder="Céldátum (pl. 2025-06-15)"
+              value={editedGoal.target_date}
+              onChangeText={(text) => setEditedGoal({ ...editedGoal, target_date: text })}
+            />
+
+            <Text style={styles.categoryLabel}>Kategória:</Text>
+            <View style={styles.categoryButtons}>
+              {[
+                { key: 'general', label: 'Általános', icon: 'wallet-outline' },
+                { key: 'home', label: 'Lakás', icon: 'home-outline' },
+                { key: 'car', label: 'Autó', icon: 'car-outline' },
+                { key: 'vacation', label: 'Nyaralás', icon: 'airplane-outline' },
+                { key: 'emergency', label: 'Vészhelyzet', icon: 'shield-outline' },
+                { key: 'education', label: 'Oktatás', icon: 'school-outline' },
+              ].map((category) => (
+                <TouchableOpacity
+                  key={category.key}
+                  style={[
+                    styles.categoryButton,
+                    editedGoal.category === category.key && styles.categoryButtonSelected
+                  ]}
+                  onPress={() => setEditedGoal({ ...editedGoal, category: category.key })}
+                >
+                  <Ionicons 
+                    name={category.icon as keyof typeof Ionicons.glyphMap} 
+                    size={20} 
+                    color={editedGoal.category === category.key ? 'white' : '#64748b'} 
+                  />
+                  <Text style={[
+                    styles.categoryButtonText,
+                    editedGoal.category === category.key && styles.categoryButtonTextSelected
+                  ]}>
+                    {category.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setEditModalVisible(false);
+                  setEditingGoal(null);
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Mégse</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.createButton]}
+                onPress={updateSavingsGoal}
+              >
+                <Text style={styles.createButtonText}>Módosítás</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -768,6 +987,13 @@ const styles = StyleSheet.create({
   goalCategory: {
     fontSize: 12,
     color: '#64748b',
+  },
+  goalActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  editButton: {
+    padding: 8,
   },
   deleteButton: {
     padding: 8,

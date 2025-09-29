@@ -7,10 +7,10 @@ import {
   TouchableOpacity,
   Alert,
   FlatList,
-  SafeAreaView,
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase, ensureValidSession } from '../lib/supabase';

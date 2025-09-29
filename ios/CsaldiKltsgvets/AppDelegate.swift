@@ -32,6 +32,24 @@ public class AppDelegate: ExpoAppDelegate {
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
+  // Handle app termination gracefully
+  public override func applicationWillTerminate(_ application: UIApplication) {
+    // Clean up React Native modules before termination
+    reactNativeFactory = nil
+    reactNativeDelegate = nil
+    super.applicationWillTerminate(application)
+  }
+
+  // Handle app entering background
+  public override func applicationDidEnterBackground(_ application: UIApplication) {
+    super.applicationDidEnterBackground(application)
+  }
+
+  // Handle app becoming active
+  public override func applicationDidBecomeActive(_ application: UIApplication) {
+    super.applicationDidBecomeActive(application)
+  }
+
   // Linking API
   public override func application(
     _ app: UIApplication,
@@ -56,15 +74,26 @@ class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
   // Extension point for config-plugins
 
   override func sourceURL(for bridge: RCTBridge) -> URL? {
-    // needed to return the correct URL for expo-dev-client.
-    bridge.bundleURL ?? bundleURL()
+    #if DEBUG
+    // In debug mode, try to connect to Metro bundler first
+    if let metroURL = RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index") {
+      return metroURL
+    }
+    #endif
+    
+    // Fallback to prebuilt bundle for production or if Metro is not available
+    return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
   }
 
   override func bundleURL() -> URL? {
-#if DEBUG
-    return RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: ".expo/.virtual-metro-entry")
-#else
+    #if DEBUG
+    // In debug mode, try to connect to Metro bundler first
+    if let metroURL = RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index") {
+      return metroURL
+    }
+    #endif
+    
+    // Fallback to prebuilt bundle for production or if Metro is not available
     return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
-#endif
   }
 }

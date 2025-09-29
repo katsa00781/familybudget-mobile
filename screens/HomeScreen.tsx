@@ -8,16 +8,17 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Dimensions,
-  SafeAreaView,
   Alert,
   RefreshControl,
   Modal,
   FlatList,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
@@ -42,6 +43,18 @@ interface BudgetPlan {
 }
 
 interface IncomePlan {
+  id: string;
+  user_id: string;
+  name: string;
+  description?: string;
+  monthly_income: number;
+  additional_incomes: string; // JSON string
+  total_income: number;
+  created_at: string;
+  updated_at?: string;
+}
+
+interface ProcessedIncomePlan {
   id: string;
   base_income: number;
   other_income: OtherIncome[];
@@ -91,7 +104,7 @@ interface ShoppingList {
 export default function HomeScreen({ navigation }: any) {
   const { user, userProfile } = useAuth();
   const [budgetPlans, setBudgetPlans] = useState<BudgetPlan[]>([]);
-  const [incomePlans, setIncomePlans] = useState<IncomePlan[]>([]);
+  const [incomePlans, setIncomePlans] = useState<ProcessedIncomePlan[]>([]);
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
   const [shoppingLists, setShoppingLists] = useState<ShoppingList[]>([]);
   const [currentShoppingList, setCurrentShoppingList] = useState<ShoppingList | null>(null);
@@ -124,13 +137,12 @@ export default function HomeScreen({ navigation }: any) {
         console.warn('Budget plans error:', budgetError);
       }
 
-      // Bevételi tervek betöltése
-      const { data: incomeData, error: incomeError } = await supabase
+      // Bevételi tervek betöltése - az összeset lekérdezzük
+      const { data: allIncomeData, error: incomeError } = await supabase
         .from('income_plans')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1);
+        .order('created_at', { ascending: false });
 
       if (incomeError) {
         console.warn('Income plans error:', incomeError);
@@ -150,8 +162,8 @@ export default function HomeScreen({ navigation }: any) {
       setBudgetPlans(budgetData || []);
       
       // Income plans feldolgozása
-      if (incomeData && incomeData.length > 0) {
-        const latestIncome = incomeData[0];
+      if (allIncomeData && allIncomeData.length > 0) {
+        const latestIncome = allIncomeData[0];
         
         // Additional incomes parse-olása
         let additionalIncomes: OtherIncome[] = [];
@@ -173,8 +185,8 @@ export default function HomeScreen({ navigation }: any) {
           console.warn('Error parsing additional incomes:', error);
         }
 
-        // IncomePlan objektum összeállítása
-        const incomeFromPlans: IncomePlan = {
+        // ProcessedIncomePlan objektum összeállítása
+        const incomeFromPlans: ProcessedIncomePlan = {
           id: latestIncome.id,
           base_income: latestIncome.monthly_income || 0,
           other_income: additionalIncomes,
@@ -223,9 +235,22 @@ export default function HomeScreen({ navigation }: any) {
 
       // Számítások
       const currentBudget = budgetData?.[0];
-      const currentIncome = incomeData?.[0];
       
-      const totalIncome = currentIncome?.total_income || 0;
+      // Kiválasztott bevételi terv betöltése AsyncStorage-ból
+      let selectedIncomeData = allIncomeData?.[0]; // alapértelmezett: első
+      try {
+        const savedIncomeId = await AsyncStorage.getItem('selectedIncomeId');
+        if (savedIncomeId && allIncomeData) {
+          const foundIncome = allIncomeData.find(income => income.id === savedIncomeId);
+          if (foundIncome) {
+            selectedIncomeData = foundIncome;
+          }
+        }
+      } catch (error) {
+        console.error('Error loading selected income ID:', error);
+      }
+      
+      const totalIncome = selectedIncomeData?.total_income || 0;
       const totalExpenses = currentBudget?.total_amount || 0;
       const balance = totalIncome - totalExpenses;
       const totalSavings = savingsData?.reduce((sum, goal) => sum + (goal.current_amount || 0), 0) || 0;

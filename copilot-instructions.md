@@ -12,6 +12,8 @@ Ez egy React Native/Expo alapú családi költségvetés kezelő alkalmazás, am
 - **Navigation**: React Navigation 6
 - **AI**: OpenAI GPT-4 (receipt OCR és elemzés)
 
+Használd a legfrissebb verziókat a függőségekből, és kövesd a legjobb gyakorlatokat a React Native fejlesztésben.
+
 ## Projekt Struktúra
 ```
 /

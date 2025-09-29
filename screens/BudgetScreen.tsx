@@ -458,7 +458,7 @@ const BudgetScreen: React.FC = () => {
   };
 
   // Új tétel hozzáadása
-  const addItem = (categoryIndex: number) => {
+  const addItem = (categoryIndex: number, callback?: () => void) => {
     const newData = [...budgetData];
     const category = newData[categoryIndex];
     const newItem: BudgetItem = {
@@ -470,6 +470,11 @@ const BudgetScreen: React.FC = () => {
     };
     newData[categoryIndex].items.push(newItem);
     setBudgetData(newData);
+    
+    // Execute callback after state update
+    if (callback) {
+      setTimeout(callback, 100);
+    }
   };
 
   // Tétel eltávolítása
@@ -1225,19 +1230,18 @@ const BudgetScreen: React.FC = () => {
                   onPress={() => {
                     console.log('💰 Adding new budget item to category:', categoryIndex);
                     console.log('📋 Category:', category.name);
-                    addItem(categoryIndex);
-                    // Automatikusan megnyitjuk az edit modalt az új elemhez
+                    
+                    // Get the index before adding the item
                     const newItemIndex = category.items.length;
-                    console.log('🆕 New item created:', {
-                      amount: 0,
-                      category: category.name,
-                      id: 'generated',
-                      subcategory: 'Új tétel',
-                      type: ''
+                    
+                    console.log('🆕 New item will be created at index:', newItemIndex);
+                    console.log('✅ About to add item and open edit modal');
+                    
+                    // Add item with callback to open modal after state update
+                    addItem(categoryIndex, () => {
+                      console.log('📝 Opening edit modal for new item at index:', newItemIndex);
+                      setEditingItem({ categoryIndex, itemIndex: newItemIndex });
                     });
-                    console.log('✅ Budget data updated, new items count:', newItemIndex + 1);
-                    console.log('📝 Opening edit modal for new item at index:', newItemIndex);
-                    setEditingItem({ categoryIndex, itemIndex: newItemIndex });
                   }}
                 >
                   <Ionicons name="add" size={16} color="#14B8A6" />
@@ -1786,7 +1790,9 @@ const BudgetScreen: React.FC = () => {
         </Modal>
 
         {/* Edit Item Modal */}
-        {editingItem && (
+        {editingItem && 
+         budgetData[editingItem.categoryIndex] && 
+         budgetData[editingItem.categoryIndex].items[editingItem.itemIndex] && (
           <Modal
             visible={true}
             animationType="slide"
@@ -1809,7 +1815,7 @@ const BudgetScreen: React.FC = () => {
                     <TextInput
                       style={styles.input}
                       placeholder="Tétel neve"
-                      value={budgetData[editingItem.categoryIndex].items[editingItem.itemIndex].subcategory}
+                      value={budgetData[editingItem.categoryIndex].items[editingItem.itemIndex]?.subcategory || ''}
                       onChangeText={(text) => updateItemName(editingItem.categoryIndex, editingItem.itemIndex, text)}
                     />
                   </View>
@@ -1820,7 +1826,7 @@ const BudgetScreen: React.FC = () => {
                     <TextInput
                       style={styles.input}
                       placeholder="0"
-                      value={budgetData[editingItem.categoryIndex].items[editingItem.itemIndex].amount.toString()}
+                      value={budgetData[editingItem.categoryIndex].items[editingItem.itemIndex]?.amount?.toString() || '0'}
                       onChangeText={(text) => updateAmount(editingItem.categoryIndex, editingItem.itemIndex, text)}
                       keyboardType="numeric"
                     />
@@ -1835,7 +1841,7 @@ const BudgetScreen: React.FC = () => {
                           key={typeOption}
                           style={[
                             styles.typeOption,
-                            budgetData[editingItem.categoryIndex].items[editingItem.itemIndex].type === typeOption && styles.activeTypeOption
+                            budgetData[editingItem.categoryIndex].items[editingItem.itemIndex]?.type === typeOption && styles.activeTypeOption
                           ]}
                           onPress={() => updateItemType(editingItem.categoryIndex, editingItem.itemIndex, typeOption)}
                         >
