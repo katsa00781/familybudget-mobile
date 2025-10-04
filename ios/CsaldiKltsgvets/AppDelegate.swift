@@ -1,99 +1,40 @@
-import Expo
+import UIKit
 import React
-import ReactAppDependencyProvider
 
-@UIApplicationMain
-public class AppDelegate: ExpoAppDelegate {
+@main
+class AppDelegate: UIResponder, UIApplicationDelegate {
   var window: UIWindow?
 
-  var reactNativeDelegate: ExpoReactNativeFactoryDelegate?
-  var reactNativeFactory: RCTReactNativeFactory?
+  func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+    
+    let jsCodeLocation: URL
 
-  public override func application(
-    _ application: UIApplication,
-    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
-  ) -> Bool {
-    let delegate = ReactNativeDelegate()
-    let factory = ExpoReactNativeFactory(delegate: delegate)
-    delegate.dependencyProvider = RCTAppDependencyProvider()
+    #if DEBUG
+        jsCodeLocation = RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index", fallbackExtension: nil)!
+    #else
+        jsCodeLocation = Bundle.main.url(forResource: "main", withExtension: "jsbundle")!
+    #endif
 
-    reactNativeDelegate = delegate
-    reactNativeFactory = factory
-    bindReactNativeFactory(factory)
+    let rootView = RCTRootView(bundleURL: jsCodeLocation, moduleName: "CsaldiKltsgvets", initialProperties: nil, launchOptions: launchOptions)
+    let rootViewController = UIViewController()
+    rootViewController.view = rootView
 
-#if os(iOS) || os(tvOS)
-    window = UIWindow(frame: UIScreen.main.bounds)
-    factory.startReactNative(
-      withModuleName: "main",
-      in: window,
-      launchOptions: launchOptions)
-#endif
+    self.window = UIWindow(frame: UIScreen.main.bounds)
+    self.window?.rootViewController = rootViewController
+    self.window?.makeKeyAndVisible()
 
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    return true
   }
 
-  // Handle app termination gracefully
-  public override func applicationWillTerminate(_ application: UIApplication) {
-    // Clean up React Native modules before termination
-    reactNativeFactory = nil
-    reactNativeDelegate = nil
-    super.applicationWillTerminate(application)
+  // MARK: UISceneSession Lifecycle
+
+  @available(iOS 13.0, *)
+  func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+    return UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
   }
 
-  // Handle app entering background
-  public override func applicationDidEnterBackground(_ application: UIApplication) {
-    super.applicationDidEnterBackground(application)
-  }
-
-  // Handle app becoming active
-  public override func applicationDidBecomeActive(_ application: UIApplication) {
-    super.applicationDidBecomeActive(application)
-  }
-
-  // Linking API
-  public override func application(
-    _ app: UIApplication,
-    open url: URL,
-    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
-  ) -> Bool {
-    return super.application(app, open: url, options: options) || RCTLinkingManager.application(app, open: url, options: options)
-  }
-
-  // Universal Links
-  public override func application(
-    _ application: UIApplication,
-    continue userActivity: NSUserActivity,
-    restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void
-  ) -> Bool {
-    let result = RCTLinkingManager.application(application, continue: userActivity, restorationHandler: restorationHandler)
-    return super.application(application, continue: userActivity, restorationHandler: restorationHandler) || result
+  @available(iOS 13.0, *)
+  func application(_ application: UIApplication, didDiscardSceneSessions sceneSessions: Set<UISceneSession>) {
   }
 }
 
-class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
-  // Extension point for config-plugins
-
-  override func sourceURL(for bridge: RCTBridge) -> URL? {
-    #if DEBUG
-    // In debug mode, try to connect to Metro bundler first
-    if let metroURL = RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index") {
-      return metroURL
-    }
-    #endif
-    
-    // Fallback to prebuilt bundle for production or if Metro is not available
-    return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
-  }
-
-  override func bundleURL() -> URL? {
-    #if DEBUG
-    // In debug mode, try to connect to Metro bundler first
-    if let metroURL = RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index") {
-      return metroURL
-    }
-    #endif
-    
-    // Fallback to prebuilt bundle for production or if Metro is not available
-    return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
-  }
-}

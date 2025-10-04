@@ -210,6 +210,7 @@ const BudgetScreen: React.FC = () => {
   const [selectedIncomeId, setSelectedIncomeId] = useState<string>('');
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [editingItem, setEditingItem] = useState<{categoryIndex: number, itemIndex: number} | null>(null);
+  const [editModalVisible, setEditModalVisible] = useState(false);
 
   // Bérkalkulátor állapotok
   const [users, setUsers] = useState<User[]>([]);
@@ -1207,20 +1208,26 @@ const BudgetScreen: React.FC = () => {
               </View>
               
               <View style={styles.itemsContainer}>
-                {category.items.map((item, itemIndex) => (
+                {category.items.map((item: any, itemIndex: number) => (
                   <TouchableOpacity
-                    key={item.id}
-                    style={styles.itemRow}
-                    onPress={() => setEditingItem({ categoryIndex, itemIndex })}
+                    key={itemIndex}
+                    style={styles.budgetItem}
+                    onPress={() => {
+                      setEditingItem({ categoryIndex, itemIndex });
+                      setEditModalVisible(true);
+                    }}
                   >
-                    <View style={styles.itemLeft}>
-                      <View style={[styles.typeIndicator, { backgroundColor: getTypeColor(item.type) }]} />
-                      <Text style={styles.itemName}>{item.subcategory}</Text>
+                    <View style={styles.budgetItemLeft}>
+                      <Text style={styles.budgetItemName}>{item.subcategory}</Text>
+                      {item.type && (
+                        <View style={[styles.typeBadge, { backgroundColor: getTypeColor(item.type) }]}>
+                          <Text style={styles.typeBadgeText}>{item.type}</Text>
+                        </View>
+                      )}
                     </View>
-                    <View style={styles.itemRight}>
-                      <Text style={styles.itemAmountText}>{formatCurrency(item.amount)}</Text>
-                      <Ionicons name="chevron-forward" size={16} color="#9CA3AF" />
-                    </View>
+                    <Text style={styles.budgetItemAmount}>
+                      {item.amount.toLocaleString()} Ft
+                    </Text>
                   </TouchableOpacity>
                 ))}
                 
@@ -1230,22 +1237,21 @@ const BudgetScreen: React.FC = () => {
                   onPress={() => {
                     console.log('💰 Adding new budget item to category:', categoryIndex);
                     console.log('📋 Category:', category.name);
-                    
-                    // Get the index before adding the item
                     const newItemIndex = category.items.length;
-                    
                     console.log('🆕 New item will be created at index:', newItemIndex);
-                    console.log('✅ About to add item and open edit modal');
                     
-                    // Add item with callback to open modal after state update
                     addItem(categoryIndex, () => {
                       console.log('📝 Opening edit modal for new item at index:', newItemIndex);
-                      setEditingItem({ categoryIndex, itemIndex: newItemIndex });
+                      setEditingItem({ 
+                        categoryIndex, 
+                        itemIndex: newItemIndex 
+                      });
+                      setEditModalVisible(true);
                     });
                   }}
                 >
-                  <Ionicons name="add" size={16} color="#14B8A6" />
-                  <Text style={styles.addItemText}>Új tétel</Text>
+                  <Ionicons name="add-circle" size={24} color="#14B8A6" />
+                  <Text style={styles.addItemButtonText}>Új tétel hozzáadása</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -2424,13 +2430,13 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  itemLeft: {
+  budgetItemLeft: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  itemName: {
+  budgetItemName: {
     fontSize: 15,
     color: '#374151',
     fontWeight: '500',
@@ -2447,16 +2453,10 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
   },
-  itemAmount: {
+  budgetItemAmount: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-  },
-  itemAmountText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginRight: 8,
   },
   addItemButton: {
     flexDirection: 'row',
@@ -2465,7 +2465,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     gap: 4,
   },
-  addItemText: {
+  addItemButtonText: {
     fontSize: 14,
     color: '#14B8A6',
     fontWeight: '500',
