@@ -785,7 +785,7 @@ export default function ShoppingScreen() {
     }, 300);
   };
 
-  // Bevásárlási statisztikák lekérése
+  // Bevásárlási statisztikák lekérése (adatbázisból)
   const getShoppingStats = async () => {
     if (!user?.id) {
       return {
@@ -800,64 +800,73 @@ export default function ShoppingScreen() {
     }
 
     try {
+      // Adatbázisból lekérjük a shopping_statistics adatokat
       const { data, error } = await supabase
-        .from('shopping_lists')
+        .from('shopping_statistics')
         .select('*')
-        .eq('user_id', user?.id);
+        .eq('user_id', user?.id)
+        .order('shopping_date', { ascending: false });
 
       if (error) throw error;
 
-      const parsedLists = data.map(list => ({
-        ...list,
-        items: typeof list.items === 'string' ? JSON.parse(list.items) : list.items
-      }));
+      console.log('📊 ShoppingScreen statisztika adatok betöltve:', data?.length || 0, 'tétel');
 
-      // Statisztikák számítása
-      const totalLists = parsedLists.length;
+      if (!data || data.length === 0) {
+        return {
+          totalLists: 0,
+          totalItems: 0,
+          totalAmount: 0,
+          mostBoughtItems: [],
+          averageListValue: 0,
+          storeFrequency: {},
+          categoryStats: {}
+        };
+      }
+
+      // Termékenkénti összesítés mennyiség alapján
+      const itemFrequency = {};
       let totalItems = 0;
       let totalAmount = 0;
-      const itemFrequency = {};
+      const uniqueLists = new Set();
       const storeFrequency = {};
       const categoryStats = {};
 
-      parsedLists.forEach(list => {
-        totalAmount += list.total_amount || 0;
+      data.forEach(item => {
+        // Lista számlálás
+        uniqueLists.add(item.shopping_list_id);
         
-        // Bolt gyakoriság (ha van store név a lista nevében)
-        const listName = list.name || '';
-        const storeNames = ['TESCO', 'ALDI', 'LIDL', 'CBA', 'PENNY', 'AUCHAN', 'SPAR'];
-        storeNames.forEach(store => {
-          if (listName.toUpperCase().includes(store)) {
-            storeFrequency[store] = (storeFrequency[store] || 0) + 1;
-          }
-        });
+        // Összegek
+        totalAmount += item.total_price || 0;
+        totalItems += item.quantity || 0;
 
-        if (list.items && Array.isArray(list.items)) {
-          list.items.forEach(item => {
-            totalItems++;
-            
-            // Termék gyakoriság
-            const itemName = item.name || 'Ismeretlen';
-            itemFrequency[itemName] = (itemFrequency[itemName] || 0) + (item.quantity || 1);
-            
-            // Kategória statisztikák
-            const category = item.category || 'Egyéb';
-            if (!categoryStats[category]) {
-              categoryStats[category] = { count: 0, totalValue: 0 };
-            }
-            categoryStats[category].count += (item.quantity || 1);
-            categoryStats[category].totalValue += ((item.price || 0) * (item.quantity || 1));
-          });
+        // Termék gyakoriság (mennyiség alapján, nem ár alapján!)
+        const itemName = item.product_name || 'Ismeretlen';
+        itemFrequency[itemName] = (itemFrequency[itemName] || 0) + (item.quantity || 0);
+
+        // Kategória statisztikák
+        const category = item.product_category || 'Egyéb';
+        if (!categoryStats[category]) {
+          categoryStats[category] = { count: 0, totalValue: 0 };
         }
+        categoryStats[category].count += (item.quantity || 0);
+        categoryStats[category].totalValue += (item.total_price || 0);
       });
 
-      // Leggyakoribb termékek (top 10)
+      const totalLists = uniqueLists.size;
+
+      // Leggyakoribb termékek (mennyiség szerint, nem ár szerint!)
       const mostBoughtItems = Object.entries(itemFrequency)
         .sort(([,a], [,b]) => (b as number) - (a as number))
         .slice(0, 10)
         .map(([name, count]) => ({ name, count }));
 
       const averageListValue = totalLists > 0 ? Math.round(totalAmount / totalLists) : 0;
+
+      // Debug információ
+      console.log('📊 ShoppingScreen adatbázis statisztika debug:');
+      console.log('- Total items (mennyiség alapján):', totalItems);
+      console.log('- Item frequency sample:', Object.entries(itemFrequency).slice(0, 3));
+      console.log('- Most bought (top 3):', mostBoughtItems.slice(0, 3));
 
       return {
         totalLists,
@@ -872,9 +881,7 @@ export default function ShoppingScreen() {
       console.error('❌ Hiba a bevásárlási statisztikák lekérésekor:', error);
       throw error;
     }
-  };
-
-  // Tanulási statisztikák megjelenítése
+  };  // Tanulási statisztikák megjelenítése
   const showLearningStats = async () => {
     try {
       console.log('🔍 Statisztikák lekérése indítása...');

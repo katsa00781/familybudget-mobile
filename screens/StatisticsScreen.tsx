@@ -10,6 +10,8 @@ import {
   SafeAreaView,
   ActivityIndicator,
   RefreshControl,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -78,7 +80,208 @@ const StatisticsScreen = () => {
   // Time period filter
   const [selectedPeriod, setSelectedPeriod] = useState<'30days' | '3months' | '6months' | 'year'>('30days');
   const [totalSpent, setTotalSpent] = useState(0);
+  
+  // Edit modal state
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<InflationStats | null>(null);
+  const [editedCurrentPrice, setEditedCurrentPrice] = useState('');
+  const [editedPreviousPrice, setEditedPreviousPrice] = useState('');
   const [totalItems, setTotalItems] = useState(0);
+  
+  // Product edit modal state
+  const [productEditModalVisible, setProductEditModalVisible] = useState(false);
+  const [editingTopProduct, setEditingTopProduct] = useState<ProductStats | null>(null);
+  const [editedQuantity, setEditedQuantity] = useState('');
+  const [editedUnit, setEditedUnit] = useState('');
+  
+  // Edit price functions
+  const openEditModal = (product: InflationStats) => {
+    setEditingProduct(product);
+    setEditedCurrentPrice(product.current_price.toString());
+    setEditedPreviousPrice(product.previous_price.toString());
+    setEditModalVisible(true);
+  };
+
+  const closeEditModal = () => {
+    setEditModalVisible(false);
+    setEditingProduct(null);
+    setEditedCurrentPrice('');
+    setEditedPreviousPrice('');
+  };
+
+  const saveEditedPrices = async () => {
+    if (!editingProduct || !user) return;
+
+    const newCurrentPrice = parseFloat(editedCurrentPrice);
+    const newPreviousPrice = parseFloat(editedPreviousPrice);
+
+    if (isNaN(newCurrentPrice) || isNaN(newPreviousPrice)) {
+      Alert.alert('Hiba', 'Kérjük, adjon meg érvényes árakat!');
+      return;
+    }
+
+    try {
+      // Update shopping_statistics table for the most recent price
+      const { error: currentPriceError } = await supabase
+        .from('shopping_statistics')
+        .update({ unit_price: newCurrentPrice })
+        .eq('user_id', user.id)
+        .eq('product_name', editingProduct.product_name)
+        .eq('shopping_date', editingProduct.last_purchase_date);
+
+      if (currentPriceError) {
+        console.error('Error updating current price:', currentPriceError);
+      }
+
+      // Update shopping_statistics table for the oldest price
+      const { error: previousPriceError } = await supabase
+        .from('shopping_statistics')
+        .update({ unit_price: newPreviousPrice })
+        .eq('user_id', user.id)
+        .eq('product_name', editingProduct.product_name)
+        .eq('shopping_date', editingProduct.first_purchase_date);
+
+      if (previousPriceError) {
+        console.error('Error updating previous price:', previousPriceError);
+      }
+
+      Alert.alert('Siker', 'Az árak sikeresen frissítve!');
+      closeEditModal();
+      // Reload statistics to reflect changes
+      loadStatistics();
+    } catch (error) {
+      console.error('Error saving edited prices:', error);
+      Alert.alert('Hiba', 'Nem sikerült menteni a változtatásokat!');
+    }
+  };
+
+  const deleteInflationRecord = async (product: InflationStats) => {
+    Alert.alert(
+      'Statisztika törlése',
+      `Biztosan törölni szeretné a "${product.product_name}" termék összes árstatisztikáját? Ez nem visszavonható!`,
+      [
+        {
+          text: 'Mégse',
+          style: 'cancel',
+        },
+        {
+          text: 'Törlés',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('shopping_statistics')
+                .delete()
+                .eq('user_id', user.id)
+                .eq('product_name', product.product_name);
+
+              if (error) {
+                throw error;
+              }
+
+              Alert.alert('Siker', 'A termék statisztikái sikeresen törölve!');
+              loadStatistics();
+            } catch (error) {
+              console.error('Error deleting product statistics:', error);
+              Alert.alert('Hiba', 'Nem sikerült törölni a termék statisztikáit!');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Top product edit functions
+  const openProductEditModal = (product: ProductStats) => {
+    setEditingTopProduct(product);
+    setEditedQuantity(product.quantity.toString());
+    setEditedUnit(product.unit);
+    setProductEditModalVisible(true);
+  };
+
+  const closeProductEditModal = () => {
+    setProductEditModalVisible(false);
+    setEditingTopProduct(null);
+    setEditedQuantity('');
+    setEditedUnit('');
+  };
+
+  const saveEditedProduct = async () => {
+    if (!editingTopProduct || !user) return;
+
+    const newQuantity = parseFloat(editedQuantity);
+    const newUnit = editedUnit.trim();
+
+    if (isNaN(newQuantity) || newQuantity <= 0) {
+      Alert.alert('Hiba', 'Kérjük, adjon meg érvényes mennyiséget!');
+      return;
+    }
+
+    if (!newUnit) {
+      Alert.alert('Hiba', 'Kérjük, adjon meg mértékegységet!');
+      return;
+    }
+
+    try {
+      // Update all records for this product with new quantity and unit
+      const { error } = await supabase
+        .from('shopping_statistics')
+        .update({ 
+          quantity: newQuantity,
+          unit: newUnit 
+        })
+        .eq('user_id', user.id)
+        .eq('product_name', editingTopProduct.productName);
+
+      if (error) {
+        throw error;
+      }
+
+      Alert.alert('Siker', 'A termék adatai sikeresen frissítve!');
+      closeProductEditModal();
+      // Reload statistics to reflect changes
+      loadStatistics();
+    } catch (error) {
+      console.error('Error saving edited product:', error);
+      Alert.alert('Hiba', 'Nem sikerült menteni a változtatásokat!');
+    }
+  };
+
+  const deleteTopProduct = async (product: ProductStats) => {
+    Alert.alert(
+      'Termék törlése',
+      `Biztosan törölni szeretné a "${product.productName}" termék összes statisztikáját? Ez nem visszavonható!`,
+      [
+        {
+          text: 'Mégse',
+          style: 'cancel',
+        },
+        {
+          text: 'Törlés',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('shopping_statistics')
+                .delete()
+                .eq('user_id', user.id)
+                .eq('product_name', product.productName);
+
+              if (error) {
+                throw error;
+              }
+
+              Alert.alert('Siker', 'A termék statisztikái sikeresen törölve!');
+              loadStatistics();
+            } catch (error) {
+              console.error('Error deleting product statistics:', error);
+              Alert.alert('Hiba', 'Nem sikerült törölni a termék statisztikáit!');
+            }
+          }
+        }
+      ]
+    );
+  };
   
   useEffect(() => {
     if (user) {
@@ -241,8 +444,19 @@ const StatisticsScreen = () => {
         averagePrice: stats.priceSum / stats.count,
         lastPurchase: stats.lastDate
       }))
-      .sort((a, b) => b.totalAmount - a.totalAmount)
+      .sort((a, b) => {
+        // Minden esetben mennyiség szerint rendezünk (ez a legtöbbet vásárolt)
+        // kg, liter esetén decimális mennyiség szerint
+        // db esetén egész szám szerint
+        return b.quantity - a.quantity;
+      })
       .slice(0, 10);
+    
+    // Debug információ a legtöbbet vásárolt termékekről
+    console.log('🏆 Legtöbbet vásárolt termékek (mennyiség szerint):');
+    topProductsArray.slice(0, 3).forEach((product, index) => {
+      console.log(`${index + 1}. ${product.productName}: ${product.quantity} ${product.unit} (${formatCurrency(product.totalAmount)})`);
+    });
     setTopProducts(topProductsArray);
 
     // Store statistics (ha van store adat)
@@ -630,17 +844,33 @@ const StatisticsScreen = () => {
                             </Text>
                             <Text style={styles.inflationProductCategory}>{product.category}</Text>
                           </View>
-                          <View style={styles.inflationChange}>
-                            <Text style={[
-                              styles.inflationPercent,
-                              { color: product.price_change_percent >= 0 ? '#FF6B6B' : '#4ECDC4' }
-                            ]}>
-                              {product.price_change_percent >= 0 ? '+' : ''}
-                              {product.price_change_percent.toFixed(1)}%
-                            </Text>
-                            <Text style={styles.inflationAmount}>
-                              {product.price_change >= 0 ? '+' : ''}{formatCurrency(product.price_change)}
-                            </Text>
+                          <View style={styles.inflationActions}>
+                            <View style={styles.inflationChange}>
+                              <Text style={[
+                                styles.inflationPercent,
+                                { color: product.price_change_percent >= 0 ? '#FF6B6B' : '#4ECDC4' }
+                              ]}>
+                                {product.price_change_percent >= 0 ? '+' : ''}
+                                {product.price_change_percent.toFixed(1)}%
+                              </Text>
+                              <Text style={styles.inflationAmount}>
+                                {product.price_change >= 0 ? '+' : ''}{formatCurrency(product.price_change)}
+                              </Text>
+                            </View>
+                            <View style={styles.editButtons}>
+                              <TouchableOpacity
+                                style={styles.editButton}
+                                onPress={() => openEditModal(product)}
+                              >
+                                <Ionicons name="pencil" size={16} color="#14B8A6" />
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={styles.deleteButton}
+                                onPress={() => deleteInflationRecord(product)}
+                              >
+                                <Ionicons name="trash" size={16} color="#EF4444" />
+                              </TouchableOpacity>
+                            </View>
                           </View>
                         </View>
                       )) : (
@@ -732,16 +962,32 @@ const StatisticsScreen = () => {
                       <View style={styles.productInfo}>
                         <Text style={styles.productName}>{product.productName}</Text>
                         <Text style={styles.productDetails}>
-                          {product.quantity} {product.unit} • Átlag: {formatCurrency(product.averagePrice)}
+                          {product.quantity.toFixed(product.unit === 'kg' || product.unit === 'l' || product.unit === 'liter' ? 2 : 0)} {product.unit} • Átlag: {formatCurrency(product.averagePrice)}/{product.unit}
                         </Text>
                         <Text style={styles.productLastPurchase}>
                           Utolsó vásárlás: {new Date(product.lastPurchase).toLocaleDateString('hu-HU')}
                         </Text>
                       </View>
-                      <View style={styles.productTotal}>
-                        <Text style={styles.productTotalText}>
-                          {formatCurrency(product.totalAmount)}
-                        </Text>
+                      <View style={styles.productActions}>
+                        <View style={styles.productTotal}>
+                          <Text style={styles.productTotalText}>
+                            {formatCurrency(product.totalAmount)}
+                          </Text>
+                        </View>
+                        <View style={styles.editButtons}>
+                          <TouchableOpacity
+                            style={styles.editButton}
+                            onPress={() => openProductEditModal(product)}
+                          >
+                            <Ionicons name="pencil" size={16} color="#14B8A6" />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.deleteButton}
+                            onPress={() => deleteTopProduct(product)}
+                          >
+                            <Ionicons name="trash" size={16} color="#EF4444" />
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     </View>
                   ))}
@@ -769,6 +1015,150 @@ const StatisticsScreen = () => {
           )}
         </ScrollView>
       </SafeAreaView>
+
+      {/* Edit Price Modal */}
+      <Modal
+        visible={editModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeEditModal}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={closeEditModal}>
+              <Ionicons name="close" size={24} color="#666" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Árak szerkesztése</Text>
+            <TouchableOpacity onPress={saveEditedPrices}>
+              <Text style={styles.modalSave}>Mentés</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.modalContent}>
+            {editingProduct && (
+              <>
+                <Text style={styles.modalProductName}>{editingProduct.product_name}</Text>
+                <Text style={styles.modalProductCategory}>{editingProduct.category} • {editingProduct.unit}</Text>
+
+                <View style={styles.modalInputGroup}>
+                  <Text style={styles.modalInputLabel}>Korábbi ár</Text>
+                  <View style={styles.modalInputContainer}>
+                    <TextInput
+                      style={styles.modalInput}
+                      value={editedPreviousPrice}
+                      onChangeText={setEditedPreviousPrice}
+                      placeholder="0"
+                      keyboardType="numeric"
+                    />
+                    <Text style={styles.modalInputUnit}>Ft</Text>
+                  </View>
+                  <Text style={styles.modalInputNote}>
+                    Első vásárlás: {new Date(editingProduct.first_purchase_date).toLocaleDateString('hu-HU')}
+                  </Text>
+                </View>
+
+                <View style={styles.modalInputGroup}>
+                  <Text style={styles.modalInputLabel}>Jelenlegi ár</Text>
+                  <View style={styles.modalInputContainer}>
+                    <TextInput
+                      style={styles.modalInput}
+                      value={editedCurrentPrice}
+                      onChangeText={setEditedCurrentPrice}
+                      placeholder="0"
+                      keyboardType="numeric"
+                    />
+                    <Text style={styles.modalInputUnit}>Ft</Text>
+                  </View>
+                  <Text style={styles.modalInputNote}>
+                    Utolsó vásárlás: {new Date(editingProduct.last_purchase_date).toLocaleDateString('hu-HU')}
+                  </Text>
+                </View>
+
+                <View style={styles.modalWarning}>
+                  <Ionicons name="warning" size={20} color="#F59E0B" />
+                  <Text style={styles.modalWarningText}>
+                    Az árak módosítása hatással lesz a statisztikákra és inflációs számításokra.
+                  </Text>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Product Edit Modal */}
+      <Modal
+        visible={productEditModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeProductEditModal}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={closeProductEditModal}>
+              <Ionicons name="close" size={24} color="#666" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Termék szerkesztése</Text>
+            <TouchableOpacity onPress={saveEditedProduct}>
+              <Text style={styles.modalSave}>Mentés</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.modalContent}>
+            {editingTopProduct && (
+              <>
+                <Text style={styles.modalProductName}>{editingTopProduct.productName}</Text>
+                <Text style={styles.modalProductCategory}>Jelenlegi adatok módosítása</Text>
+
+                <View style={styles.modalInputGroup}>
+                  <Text style={styles.modalInputLabel}>Mennyiség</Text>
+                  <View style={styles.modalInputContainer}>
+                    <TextInput
+                      style={styles.modalInput}
+                      value={editedQuantity}
+                      onChangeText={setEditedQuantity}
+                      placeholder="1"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                  <Text style={styles.modalInputNote}>
+                    Jelenlegi: {editingTopProduct.quantity} {editingTopProduct.unit}
+                  </Text>
+                </View>
+
+                <View style={styles.modalInputGroup}>
+                  <Text style={styles.modalInputLabel}>Mértékegység</Text>
+                  <View style={styles.modalInputContainer}>
+                    <TextInput
+                      style={styles.modalInput}
+                      value={editedUnit}
+                      onChangeText={setEditedUnit}
+                      placeholder="db"
+                    />
+                  </View>
+                  <Text style={styles.modalInputNote}>
+                    Példák: db, kg, g, l, liter, csomag, doboz
+                  </Text>
+                </View>
+
+                <View style={styles.modalWarning}>
+                  <Ionicons name="information-circle" size={20} color="#3B82F6" />
+                  <Text style={styles.modalWarningText}>
+                    Példa: 200g-os csigatészta csomag → Mennyiség: 1, Mértékegység: csomag
+                  </Text>
+                </View>
+
+                <View style={styles.modalWarning}>
+                  <Ionicons name="warning" size={20} color="#F59E0B" />
+                  <Text style={styles.modalWarningText}>
+                    A módosítás hatással lesz a statisztikákra és a termék összes korábbi vásárlási adatára.
+                  </Text>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </LinearGradient>
   );
 };
@@ -1136,6 +1526,124 @@ const styles = StyleSheet.create({
   monthlyTrendRate: {
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  inflationActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    marginLeft: 8,
+  },
+  editButton: {
+    backgroundColor: 'rgba(20, 184, 166, 0.2)',
+    borderRadius: 6,
+    padding: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteButton: {
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    borderRadius: 6,
+    padding: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: 'white',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1e293b',
+  },
+  modalSave: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#14B8A6',
+  },
+  modalContent: {
+    flex: 1,
+    padding: 20,
+  },
+  modalProductName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 4,
+  },
+  modalProductCategory: {
+    fontSize: 14,
+    color: '#64748b',
+    marginBottom: 24,
+  },
+  modalInputGroup: {
+    marginBottom: 24,
+  },
+  modalInputLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  modalInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  modalInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1e293b',
+  },
+  modalInputUnit: {
+    fontSize: 16,
+    color: '#64748b',
+    marginLeft: 8,
+  },
+  modalInputNote: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
+  modalWarning: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 8,
+  },
+  modalWarningText: {
+    fontSize: 14,
+    color: '#92400e',
+    marginLeft: 8,
+    flex: 1,
+    lineHeight: 20,
+  },
+  productActions: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: 8,
   },
 });
 

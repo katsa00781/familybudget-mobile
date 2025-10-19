@@ -1352,6 +1352,15 @@ const BudgetScreen: React.FC = () => {
                     </View>
                   </TouchableOpacity>
                 ))}
+                
+                {/* Új tétel hozzáadása gomb */}
+                <TouchableOpacity
+                  style={styles.addItemButton}
+                  onPress={() => addItem(categoryIndex)}
+                >
+                  <Ionicons name="add-circle-outline" size={20} color="#14B8A6" />
+                  <Text style={styles.addItemText}>Új tétel hozzáadása</Text>
+                </TouchableOpacity>
               </View>
             </View>
           ))}
@@ -2588,13 +2597,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    gap: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: 8,
+    backgroundColor: 'rgba(20, 184, 166, 0.1)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(20, 184, 166, 0.3)',
+    borderStyle: 'dashed',
   },
   addItemText: {
     fontSize: 14,
     color: '#14B8A6',
-    fontWeight: '500',
+    fontWeight: '600',
+    marginLeft: 4,
   },
   modalOverlay: {
     flex: 1,
