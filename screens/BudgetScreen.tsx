@@ -55,6 +55,7 @@ interface IncomePlan {
   total_income: number;
   created_at: string;
   updated_at?: string;
+  is_active?: boolean;
 }
 
 // Bérkalkulátor típusok
@@ -276,11 +277,12 @@ const BudgetScreen: React.FC = () => {
         // Silent error handling
       }
 
-      // Bevételi tervek betöltése
+      // Bevételi tervek betöltése - aktív terveket előre rendezve
       const { data: incomeData, error: incomeError } = await supabase
         .from('income_plans')
         .select('*')
         .eq('user_id', user.id)
+        .order('is_active', { ascending: false })
         .order('created_at', { ascending: false });
 
       if (incomeError) {
@@ -367,6 +369,82 @@ const BudgetScreen: React.FC = () => {
       setSelectedBudgetId(budget.id);
       setBudgetName(budget.name || '');
       setBudgetDescription(budget.description || '');
+    }
+  };
+
+  const setActiveBudget = async (budgetId: string) => {
+    if (!user) return;
+
+    try {
+      setIsLoading(true);
+
+      // Minden költségvetést inaktívvá teszünk
+      await supabase
+        .from('budget_plans')
+        .update({ is_active: false })
+        .eq('user_id', user.id);
+
+      // A kiválasztott költségvetést aktívvá tesszük
+      const { error } = await supabase
+        .from('budget_plans')
+        .update({ is_active: true })
+        .eq('id', budgetId)
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Hiba az aktív költségvetés beállításakor:', error);
+        Alert.alert('Hiba', 'Nem sikerült beállítani az aktív költségvetést');
+      } else {
+        Alert.alert('Siker', 'Költségvetés aktívvá téve!');
+        // Reload data to reflect changes
+        loadData();
+      }
+    } catch (error) {
+      console.error('Hiba az aktív költségvetés beállításakor:', error);
+      Alert.alert('Hiba', 'Nem sikerült beállítani az aktív költségvetést');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const setActiveIncome = async (incomeId: string) => {
+    if (!user) return;
+
+    try {
+      setIsLoading(true);
+
+      // Minden bevételi tervet inaktívvá teszünk
+      await supabase
+        .from('income_plans')
+        .update({ is_active: false })
+        .eq('user_id', user.id);
+
+      // A kiválasztott bevételi tervet aktívvá tesszük
+      const { error } = await supabase
+        .from('income_plans')
+        .update({ is_active: true })
+        .eq('id', incomeId)
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Hiba az aktív bevételi terv beállításakor:', error);
+        Alert.alert('Hiba', 'Nem sikerült beállítani az aktív bevételi tervet');
+      } else {
+        Alert.alert('Siker', 'Bevételi terv aktívvá téve!');
+        // Frissítsük a várható bevételt
+        const selectedIncome = incomePlans.find(income => income.id === incomeId);
+        if (selectedIncome) {
+          setExpectedIncome(selectedIncome.total_income || 0);
+          setSelectedIncomeId(incomeId);
+        }
+        // Reload data to reflect changes
+        loadData();
+      }
+    } catch (error) {
+      console.error('Hiba az aktív bevételi terv beállításakor:', error);
+      Alert.alert('Hiba', 'Nem sikerült beállítani az aktív bevételi tervet');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -1120,24 +1198,82 @@ const BudgetScreen: React.FC = () => {
             <Text style={styles.budgetSelectorTitle}>Költségvetés:</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.budgetSelector}>
               {savedBudgets.map((budget) => (
-                <TouchableOpacity
-                  key={budget.id}
-                  style={[
-                    styles.budgetOption,
-                    selectedBudgetId === budget.id && styles.selectedBudgetOption
-                  ]}
-                  onPress={() => loadBudget(budget)}
-                >
-                  <Text style={[
-                    styles.budgetOptionText,
-                    selectedBudgetId === budget.id && styles.selectedBudgetOptionText
-                  ]}>
-                    {budget.name || `Költségvetés ${budget.id.slice(0, 8)}`}
-                  </Text>
-                  <Text style={styles.budgetOptionAmount}>
-                    {formatCurrency(budget.total_amount)}
-                  </Text>
-                </TouchableOpacity>
+                <View key={budget.id} style={styles.budgetCardContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.budgetOption,
+                      selectedBudgetId === budget.id && styles.selectedBudgetOption
+                    ]}
+                    onPress={() => loadBudget(budget)}
+                  >
+                    <Text style={[
+                      styles.budgetOptionText,
+                      selectedBudgetId === budget.id && styles.selectedBudgetOptionText
+                    ]}>
+                      {budget.name || `Költségvetés ${budget.id.slice(0, 8)}`}
+                    </Text>
+                    <Text style={styles.budgetOptionAmount}>
+                      {formatCurrency(budget.total_amount)}
+                    </Text>
+                  </TouchableOpacity>
+                  {selectedBudgetId === budget.id && (
+                    <TouchableOpacity
+                      style={styles.activateBudgetButton}
+                      onPress={() => setActiveBudget(budget.id)}
+                    >
+                      <Ionicons name="checkmark-circle" size={16} color="white" />
+                      <Text style={styles.activateBudgetButtonText}>Aktívvá tétel</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Income Plan Selector */}
+        {incomePlans.length > 0 && (
+          <View style={styles.budgetSelectorContainer}>
+            <Text style={styles.budgetSelectorTitle}>Várható bevétel:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.budgetSelector}>
+              {incomePlans.map((income) => (
+                <View key={income.id} style={styles.budgetCardContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.budgetOption,
+                      selectedIncomeId === income.id && styles.selectedBudgetOption
+                    ]}
+                    onPress={() => {
+                      setSelectedIncomeId(income.id);
+                      setExpectedIncome(income.total_income || 0);
+                    }}
+                  >
+                    <Text style={[
+                      styles.budgetOptionText,
+                      selectedIncomeId === income.id && styles.selectedBudgetOptionText
+                    ]}>
+                      {income.name || `Bevétel ${income.id.slice(0, 8)}`}
+                    </Text>
+                    <Text style={styles.budgetOptionAmount}>
+                      {formatCurrency(income.total_income || 0)}
+                    </Text>
+                    {income.is_active && (
+                      <View style={styles.activeIndicator}>
+                        <Ionicons name="checkmark-circle" size={12} color="#22C55E" />
+                        <Text style={styles.activeIndicatorText}>Aktív</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                  {selectedIncomeId === income.id && (
+                    <TouchableOpacity
+                      style={styles.activateBudgetButton}
+                      onPress={() => setActiveIncome(income.id)}
+                    >
+                      <Ionicons name="checkmark-circle" size={16} color="white" />
+                      <Text style={styles.activateBudgetButtonText}>Aktívvá tétel</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               ))}
             </ScrollView>
           </View>
@@ -3263,6 +3399,37 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: 'white',
     marginLeft: 4,
+  },
+  // Budget card container and activate button styles
+  budgetCardContainer: {
+    marginRight: 12,
+  },
+  activateBudgetButton: {
+    backgroundColor: '#10B981',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  activateBudgetButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  activeIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  activeIndicatorText: {
+    color: '#22C55E',
+    fontSize: 10,
+    fontWeight: '600',
+    marginLeft: 2,
   },
 });
 

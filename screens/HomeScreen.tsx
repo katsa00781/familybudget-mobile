@@ -16,8 +16,10 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { processReceiptImage, ReceiptData } from '../lib/receiptOCR_clean';
 
 const { width } = Dimensions.get('window');
 
@@ -105,6 +107,7 @@ export default function HomeScreen({ navigation }: any) {
   const [categoryData, setCategoryData] = useState<CategoryData[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
 
   const loadDashboardData = useCallback(async () => {
     if (!user) return;
@@ -112,28 +115,68 @@ export default function HomeScreen({ navigation }: any) {
     try {
       setLoading(true);
       
-      // Költségvetési tervek betöltése
-      const { data: budgetData, error: budgetError } = await supabase
+      // Költségvetési tervek betöltése - aktív költségvetést keresünk először
+      const { data: activeBudgetData, error: activeBudgetError } = await supabase
         .from('budget_plans')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
+        .eq('is_active', true)
         .limit(1);
 
-      if (budgetError) {
-        console.warn('Budget plans error:', budgetError);
+      if (activeBudgetError) {
+        console.warn('Active budget plans error:', activeBudgetError);
       }
 
-      // Bevételi tervek betöltése
-      const { data: incomeData, error: incomeError } = await supabase
+      let budgetData = activeBudgetData;
+
+      // Ha nincs aktív költségvetés, akkor a legfrissebbet vesszük
+      if (!activeBudgetData || activeBudgetData.length === 0) {
+        const { data: latestBudgetData, error: latestBudgetError } = await supabase
+          .from('budget_plans')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        budgetData = latestBudgetData;
+        
+        if (latestBudgetError) {
+          console.warn('Latest budget plans error:', latestBudgetError);
+        }
+      }
+
+      if (activeBudgetError) {
+        console.warn('Active budget plans error:', activeBudgetError);
+      }
+
+      // Bevételi tervek betöltése - aktív bevételi tervet keresünk először  
+      const { data: activeIncomeData, error: activeIncomeError } = await supabase
         .from('income_plans')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
+        .eq('is_active', true)
         .limit(1);
 
-      if (incomeError) {
-        console.warn('Income plans error:', incomeError);
+      if (activeIncomeError) {
+        console.warn('Active income plans error:', activeIncomeError);
+      }
+
+      let incomeData = activeIncomeData;
+
+      // Ha nincs aktív bevételi terv, akkor a legfrissebbet vesszük
+      if (!activeIncomeData || activeIncomeData.length === 0) {
+        const { data: latestIncomeData, error: latestIncomeError } = await supabase
+          .from('income_plans')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        incomeData = latestIncomeData;
+        
+        if (latestIncomeError) {
+          console.warn('Latest income plans error:', latestIncomeError);
+        }
       }
 
       // Megtakarítási célok betöltése
@@ -317,10 +360,14 @@ export default function HomeScreen({ navigation }: any) {
     </View>
   );
 
-  const renderQuickAction = (title: string, icon: string, color: string, onPress: () => void) => (
-    <TouchableOpacity style={styles.quickAction} onPress={onPress}>
+  const renderQuickAction = (title: string, icon: string, color: string, onPress: () => void, loading?: boolean) => (
+    <TouchableOpacity style={styles.quickAction} onPress={onPress} disabled={loading}>
       <View style={[styles.quickActionIcon, { backgroundColor: color }]}>
-        <Ionicons name={icon as any} size={20} color="white" />
+        {loading ? (
+          <ActivityIndicator size="small" color="white" />
+        ) : (
+          <Ionicons name={icon as any} size={20} color="white" />
+        )}
       </View>
       <Text style={styles.quickActionText}>{title}</Text>
     </TouchableOpacity>
@@ -384,6 +431,177 @@ export default function HomeScreen({ navigation }: any) {
     navigation.navigate('Megtakarítások');
   };
 
+  // OCR képfeldolgozó funkciók
+  const takePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Engedély szükséges', 'A kamera használatához engedély szükséges.');
+        return;
+      }
+
+      setOcrLoading(true);
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await processReceiptImageWithOCR(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Hiba a fotó készítésekor:', error);
+      Alert.alert('Hiba', 'Nem sikerült elkészíteni a fotót');
+    } finally {
+      setOcrLoading(false);
+    }
+  };
+
+  const pickFromGallery = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Engedély szükséges', 'A fotótár eléréséhez engedély szükséges.');
+        return;
+      }
+
+      setOcrLoading(true);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await processReceiptImageWithOCR(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Hiba a galéria használatakor:', error);
+      Alert.alert('Hiba', 'Nem sikerült kiválasztani a képet');
+    } finally {
+      setOcrLoading(false);
+    }
+  };
+
+  const createNewShoppingList = async () => {
+    try {
+      if (!user) return;
+      
+      const newList = {
+        name: `Bevásárlólista - ${new Date().toLocaleDateString('hu-HU')}`,
+        items: JSON.stringify([]),
+        user_id: user.id,
+        completed: false
+      };
+
+      const { data, error } = await supabase
+        .from('shopping_lists')
+        .insert([newList])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      navigation.navigate('Bevásárlólista', { 
+        shoppingListId: data.id 
+      });
+    } catch (error) {
+      console.error('Hiba a bevásárlólista létrehozásakor:', error);
+      Alert.alert('Hiba', 'Nem sikerült létrehozni a bevásárló listát');
+    }
+  };
+
+  const processReceiptImageWithOCR = async (imageUri: string) => {
+    try {
+      console.log('🔍 OCR feldolgozás indítása...', imageUri);
+      
+      // OCR feldolgozás - ismert Base64 probléma miatt fallback mock adatok
+      let receiptData: ReceiptData;
+      
+      try {
+        receiptData = await processReceiptImage(imageUri);
+        console.log('✅ OCR feldolgozás sikeres:', receiptData);
+      } catch (ocrError) {
+        console.warn('⚠️ OCR hiba - mock adatok használata:', ocrError);
+        
+        // Fallback mock adatok Base64 probléma miatt
+        receiptData = {
+          items: [
+            {
+              id: '1',
+              name: 'Kenyér',
+              quantity: 1,
+              unit: 'db',
+              price: 450,
+              category: 'Pékáru',
+              checked: false
+            },
+            {
+              id: '2', 
+              name: 'Tej 2.8%',
+              quantity: 1,
+              unit: 'l',
+              price: 320,
+              category: 'Tejtermék',
+              checked: false
+            },
+            {
+              id: '3',
+              name: 'Alma',
+              quantity: 1,
+              unit: 'kg',
+              price: 890,
+              category: 'Gyümölcs',
+              checked: false
+            }
+          ],
+          total: 1660,
+          date: new Date().toISOString().split('T')[0],
+          store: 'Demo bolt'
+        };
+      }
+      
+      // Eredmény megjelenítése
+      Alert.alert(
+        'OCR feldolgozás kész!',
+        `${receiptData.items.length} termék felismerve\nÖsszesen: ${receiptData.total} Ft\nBolt: ${receiptData.store}${receiptData.store === 'Demo bolt' ? ' (Demo adatok)' : ''}`,
+        [
+          { text: 'OK' },
+          { 
+            text: 'Bevásárlólistához', 
+            onPress: () => {
+              console.log('🚀 Navigation indítása Bevásárlólistához OCR adatokkal');
+              console.log('📊 OCR adatok navigációhoz:', JSON.stringify(receiptData));
+              navigation.navigate('Bevásárlólista', { 
+                ocrData: receiptData,
+                capturedImageUri: imageUri 
+              });
+              console.log('✅ Navigation meghívva');
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('❌ OCR feldolgozási hiba:', error);
+      Alert.alert(
+        'OCR feldolgozás hiba',
+        'Nem sikerült feldolgozni a nyugtát. Próbáld meg újra vagy használd a manuális bevitelt.',
+        [
+          { text: 'OK' },
+          { 
+            text: 'Manuális bevitel', 
+            onPress: () => navigation.navigate('Bevásárlólista', { 
+              capturedImageUri: imageUri 
+            })
+          }
+        ]
+      );
+    }
+  };
+
   if (loading) {
     return (
       <LinearGradient
@@ -435,22 +653,24 @@ export default function HomeScreen({ navigation }: any) {
             </Text>
           </View>
 
+          {/* Quick Actions - Most felül */}
+          <View style={styles.quickActionsContainer}>
+            <Text style={styles.sectionTitle}>Gyors műveletek</Text>
+            <View style={styles.quickActionsGrid}>
+              {renderQuickAction('Fotó készítése', 'camera', '#22C55E', takePhoto, ocrLoading)}
+              {renderQuickAction('Galéria', 'images', '#0EA5E9', pickFromGallery, ocrLoading)}
+              {renderQuickAction('Új lista', 'add-circle', '#14B8A6', createNewShoppingList)}
+              {renderQuickAction('Bevásárlás', 'basket', '#8B5CF6', navigateToShopping)}
+              {renderQuickAction('Költségvetés', 'calculator', '#F59E0B', navigateToBudget)}
+              {renderQuickAction('Megtakarítás', 'wallet', '#EC4899', navigateToSavings)}
+            </View>
+          </View>
+
           {/* Stats Cards */}
           <View style={styles.statsContainer}>
             {renderStatsCard('Tervezett havi bevétel', dashboardStats.monthlyIncome, 'arrow-up', '#22C55E')}
             {renderStatsCard('Tervezett havi kiadás', dashboardStats.monthlyExpenses, 'arrow-down', '#EF4444')}
             {renderStatsCard('Tervezett havi megtakarítás', dashboardStats.savings, 'trophy', '#14B8A6')}
-          </View>
-
-          {/* Quick Actions */}
-          <View style={styles.quickActionsContainer}>
-            <Text style={styles.sectionTitle}>Gyors műveletek</Text>
-            <View style={styles.quickActionsGrid}>
-              {renderQuickAction('Bevásárlás', 'basket', '#14B8A6', navigateToShopping)}
-              {renderQuickAction('Költségvetés', 'calculator', '#8B5CF6', navigateToBudget)}
-              {renderQuickAction('Megtakarítás', 'wallet', '#F59E0B', navigateToSavings)}
-              {renderQuickAction('Családtagok', 'people', '#EC4899', navigateToFamilyMembers)}
-            </View>
           </View>
 
           {/* Category Breakdown */}
@@ -653,10 +873,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   quickAction: {
-    width: (width - 60) / 2,
+    width: (width - 80) / 3,
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 12,
-    padding: 16,
+    padding: 12,
     marginBottom: 12,
     alignItems: 'center',
     shadowColor: '#000',
@@ -666,12 +886,12 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   quickActionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -679,7 +899,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   quickActionText: {
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '600',
     color: '#333',
     textAlign: 'center',

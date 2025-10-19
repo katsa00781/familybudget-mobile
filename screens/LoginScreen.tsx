@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,8 +20,25 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
-  const { signIn } = useAuth();
+  const { signIn, isRememberMeEnabled, getSavedEmail } = useAuth();
+
+  useEffect(() => {
+    // Betöltjük a mentett adatokat ha vannak
+    const loadSavedData = async () => {
+      const enabled = await isRememberMeEnabled();
+      if (enabled) {
+        setRememberMe(true);
+        const savedEmail = await getSavedEmail();
+        if (savedEmail) {
+          setEmail(savedEmail);
+        }
+      }
+    };
+    
+    loadSavedData();
+  }, []);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -31,7 +48,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
 
     setLoading(true);
     try {
-      const { error } = await signIn(email, password);
+      const { error } = await signIn(email, password, rememberMe);
 
       if (error) {
         Alert.alert('Hiba', 'Hibás e-mail cím vagy jelszó');
@@ -76,6 +93,16 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
             secureTextEntry
             autoComplete="password"
           />
+
+          <TouchableOpacity
+            style={styles.checkboxContainer}
+            onPress={() => setRememberMe(!rememberMe)}
+          >
+            <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+              {rememberMe && <Ionicons name="checkmark" size={16} color="white" />}
+            </View>
+            <Text style={styles.checkboxText}>Bejelentkezve marad</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
@@ -142,6 +169,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 5,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
+    marginRight: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  checkboxChecked: {
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 1)',
+  },
+  checkboxText: {
+    color: '#ffffff',
+    fontSize: 16,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   button: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',

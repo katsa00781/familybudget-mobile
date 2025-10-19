@@ -1,5 +1,6 @@
 // Keep existing imports and code before the style fix...
 import React, { useState, useEffect, useRef } from 'react';
+import { useRoute } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -18,15 +19,39 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
 } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import processReceiptImageOCR, { addLearningExample, getLearningStats, addTestLearningData } from '../lib/receiptOCR_clean';
+import { processReceiptImage, addLearningExample, getLearningStats, addTestLearningData, ReceiptData } from '../lib/receiptOCR_clean';
+
+// Fix kategóriák listája
+const PRODUCT_CATEGORIES = [
+  'Egyéb',
+  'Tejtermékek',
+  'Hús és hal', 
+  'Zöldség és gyümölcs',
+  'Pékáruk',
+  'Fagyasztott termékek',
+  'Konzerv és üveges',
+  'Szárazáruk és tészták',
+  'Üdítők',
+  'Alkoholos italok',
+  'Édességek és snack',
+  'Háztartási cikkek',
+  'Tisztálkodási szerek',
+  'Gyógyszer és egészség',
+  'Bébiápolás',
+  'Kisállat ellátás'
+];
 
 export default function ShoppingScreen() {
+  // Navigation and route
+  const route = useRoute();
+  
   // Auth context
   const { user } = useAuth();
   
@@ -60,6 +85,10 @@ export default function ShoppingScreen() {
   const [editUnit, setEditUnit] = useState('db');
   const [editPrice, setEditPrice] = useState('0');
   const [editCategory, setEditCategory] = useState('Egyéb');
+  
+  // Termék név javaslatok state-ek
+  const [nameSuggestions, setNameSuggestions] = useState([]);
+  const [showNameSuggestions, setShowNameSuggestions] = useState(false);
 
   // Keep all existing functions and logic...
   useEffect(() => {
@@ -68,6 +97,33 @@ export default function ShoppingScreen() {
       loadProducts();
     }
   }, [user?.id]);
+
+  // OCR adatok kezelése navigáció esetén
+  useEffect(() => {
+    const params = route.params as any;
+    const ocrData = params?.ocrData;
+    const capturedImageUri = params?.capturedImageUri;
+    
+    console.log('🔍 Route params check:', { 
+      ocrData: !!ocrData, 
+      capturedImageUri: !!capturedImageUri,
+      params: JSON.stringify(params)
+    });
+    
+    if (ocrData) {
+      console.log('📊 OCR adatok érkeztek navigációból:', ocrData);
+      setOriginalOCRResult(ocrData);
+      setPreviewItems(ocrData.items);
+      setPreviewStoreName(ocrData.store || '');
+      
+      // Modal megjelenítése kis delay-jel a navigáció után
+      setTimeout(() => {
+        console.log('🎭 Modal megjelenítése 500ms delay után');
+        setIsPreviewModalVisible(true);
+        console.log('🎭 OCR előnézet modal megnyitva navigációból');
+      }, 500);
+    }
+  }, [route.params]);
 
   const loadShoppingLists = async () => {
     if (!user?.id) return;
@@ -322,6 +378,227 @@ export default function ShoppingScreen() {
     }
   };
 
+  // Függvény a hasonló terméknevek kereséséhez
+  const findSimilarProducts = async (productName) => {
+    if (!user?.id || !productName || productName.length < 2) return [];
+
+    try {
+      const { data: existingProducts } = await supabase
+        .from('products')
+        .select('name, category, unit, price')
+        .eq('user_id', user.id);
+
+      if (!existingProducts) return [];
+
+      // Hasonlóság alapú szűrés
+      const similar = existingProducts.filter(product => {
+        const name1 = productName.toLowerCase().trim();
+        const name2 = product.name.toLowerCase().trim();
+        
+        // Egyezés vizsgálat különböző módszerekkel
+        return (
+          name2.includes(name1) || 
+          name1.includes(name2) ||
+          calculateSimilarity(name1, name2) > 0.6
+        );
+      });
+
+      // Egyedi nevek visszaadása, csökkenő hasonlóság szerint rendezve
+      const uniqueProducts = Array.from(
+        new Map(similar.map(p => [p.name, p])).values()
+      );
+      
+      return uniqueProducts.slice(0, 5); // Max 5 javaslat
+    } catch (error) {
+      console.error('Hiba a hasonló termékek keresésekor:', error);
+      return [];
+    }
+  };
+
+  // Egyszerű hasonlóság számítás (Levenshtein távolság alapú)
+  const calculateSimilarity = (str1, str2) => {
+    const matrix = [];
+    const len1 = str1.length;
+    const len2 = str2.length;
+
+    for (let i = 0; i <= len1; i++) {
+      matrix[i] = [i];
+    }
+    for (let j = 0; j <= len2; j++) {
+      matrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        if (str1[i - 1] === str2[j - 1]) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j - 1] + 1
+          );
+        }
+      }
+    }
+
+    const maxLen = Math.max(len1, len2);
+    return maxLen === 0 ? 1 : (maxLen - matrix[len1][len2]) / maxLen;
+  };
+
+  // OCR eredmények teljes feldolgozása
+  const processOCRResults = async (ocrItems, storeName) => {
+    if (!user?.id) {
+      Alert.alert('Hiba', 'Nincs bejelentkezett felhasználó');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      // OCR elemek feldolgozása hasonló termékek keresésével
+      const formattedItems = [];
+      
+      for (let index = 0; index < ocrItems.length; index++) {
+        const item = ocrItems[index];
+        const productName = item.name || 'Névtelen termék';
+        
+        // Hasonló termékek keresése a már létező adatbázisban
+        const similarProducts = await findSimilarProducts(productName);
+        
+        // Ha van hasonló termék, használjuk az első találat nevét és adatait
+        let standardizedName = productName;
+        let standardizedCategory = item.category || 'Egyéb';
+        let standardizedUnit = item.unit || 'db';
+        
+        if (similarProducts.length > 0) {
+          const bestMatch = similarProducts[0];
+          standardizedName = bestMatch.name;
+          standardizedCategory = bestMatch.category || item.category || 'Egyéb';
+          standardizedUnit = bestMatch.unit || item.unit || 'db';
+          
+          console.log(`🔗 Hasonló termék találat: "${productName}" -> "${standardizedName}"`);
+        }
+        
+        formattedItems.push({
+          id: `ocr_${Date.now()}_${index}`,
+          name: standardizedName,
+          originalName: productName, // Eredeti OCR név megőrzése
+          quantity: parseInt(item.quantity) || 1,
+          unit: standardizedUnit,
+          price: parseFloat(item.price) || 0,
+          category: standardizedCategory,
+          checked: true, // OCR eredmények alapértelmezetten kipipálva (megvásárolt)
+          similarProducts: similarProducts // Javaslatok tárolása a szerkesztéshez
+        });
+      }
+
+      // 1. Hozzáadás a jelenlegi lista elemeihez
+      setNewItems(prevItems => [...prevItems, ...formattedItems]);
+
+      // 2. Termékek mentése az adatbázisba (ha még nincsenek)
+      console.log('💾 Termékek mentése az adatbázisba...');
+      for (const item of formattedItems) {
+        try {
+          const { error: productError } = await supabase
+            .from('products')
+            .upsert({
+              name: item.name,
+              category: item.category,
+              unit: item.unit,
+              price: item.price,
+              user_id: user.id // Felhasználóhoz kapcsolás
+            }, {
+              onConflict: 'name,user_id'
+            });
+
+          if (productError) {
+            console.warn('⚠️ Termék mentési hiba:', productError);
+          } else {
+            console.log('✅ Termék mentve:', item.name);
+          }
+        } catch (productError) {
+          console.warn('⚠️ Termék mentési kivétel:', productError);
+        }
+      }
+
+      // 3. Vásárlási statisztikák készítése (termékenkénti bontásban)
+      const receiptDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD formátum
+      
+      console.log('📊 Vásárlási statisztikák mentése...');
+      const statisticsRecords = formattedItems.map(item => ({
+        user_id: user.id,
+        shopping_date: receiptDate,
+        product_name: item.name,
+        product_category: item.category,
+        store_name: storeName || 'Ismeretlen bolt',
+        quantity: item.quantity,
+        unit: item.unit,
+        unit_price: item.price,
+        total_price: item.price * item.quantity
+      }));
+
+      try {
+        const { error: statsError } = await supabase
+          .from('shopping_statistics')
+          .insert(statisticsRecords);
+
+        if (statsError) {
+          console.warn('⚠️ Statisztika mentési hiba:', statsError);
+        } else {
+          console.log('✅ Vásárlási statisztikák mentve:', statisticsRecords.length, 'termék');
+        }
+      } catch (statsError) {
+        console.warn('⚠️ Statisztika mentési kivétel:', statsError);
+      }
+
+      // 4. Termékár történet frissítése (inflációkövetéshez)
+      console.log('📈 Termékár történet frissítése...');
+      const priceHistoryRecords = formattedItems.map(item => ({
+        user_id: user.id,
+        product_name: item.name,
+        normalized_name: item.name.toLowerCase().replace(/\s+/g, '_'),
+        category: item.category,
+        unit: item.unit,
+        price: item.price,
+        store_name: storeName || 'Ismeretlen bolt',
+        purchase_date: receiptDate
+      }));
+
+      try {
+        const { error: priceHistoryError } = await supabase
+          .from('product_price_history')
+          .insert(priceHistoryRecords);
+
+        if (priceHistoryError) {
+          console.warn('⚠️ Árhistória mentési hiba:', priceHistoryError);
+        } else {
+          console.log('✅ Termékár történet frissítve:', priceHistoryRecords.length, 'termék');
+        }
+      } catch (priceHistoryError) {
+        console.warn('⚠️ Árhistória mentési kivétel:', priceHistoryError);
+      }
+
+      // 5. Termékadatbázis és listák frissítése
+      await loadProducts();
+      
+      const totalAmount = formattedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      Alert.alert(
+        'Siker!', 
+        `${formattedItems.length} termék hozzáadva és feldolgozva!\n` +
+        `💰 Összesen: ${totalAmount.toLocaleString('hu-HU')} Ft\n` +
+        `🏪 Bolt: ${storeName || 'Ismeretlen'}\n` +
+        `📊 Statisztikák és árhistória frissítve`
+      );
+
+    } catch (error) {
+      console.error('❌ OCR eredmény feldolgozási hiba:', error);
+      Alert.alert('Hiba', 'Nem sikerült feldolgozni az OCR eredményeket');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const previewImportData = () => {
     try {
       const items = JSON.parse(importJsonData);
@@ -364,7 +641,7 @@ export default function ShoppingScreen() {
     });
 
     if (!result.canceled) {
-      processReceiptImage(result.assets[0].uri);
+      processReceiptImageLocal(result.assets[0].uri);
     }
   };
 
@@ -383,24 +660,32 @@ export default function ShoppingScreen() {
     });
 
     if (!result.canceled) {
-      processReceiptImage(result.assets[0].uri);
+      processReceiptImageLocal(result.assets[0].uri);
     }
   };
 
-  const processReceiptImage = async (imageUri: string) => {
+  const processReceiptImageLocal = async (imageUri: string) => {
     try {
       setIsLoading(true);
       Alert.alert('OCR feldolgozás', 'Nyugta feldolgozása folyamatban...');
       
-      const receiptData = await processReceiptImageOCR(imageUri);
+      const receiptData: ReceiptData = await processReceiptImage(imageUri);
       
       if (receiptData && receiptData.items.length > 0) {
+        console.log('🔍 OCR eredmény feldolgozás kezdése...');
         setOriginalOCRResult(receiptData); // Eredeti OCR eredmény tárolása
+        console.log('✅ Original OCR result set');
+        
         setPreviewItems(receiptData.items);
+        console.log('✅ Preview items set:', receiptData.items.length, 'items');
+        
         setPreviewStoreName(receiptData.store);
+        console.log('✅ Preview store name set:', receiptData.store);
+        
         setIsPreviewModalVisible(true);
-        const storeInfo = receiptData.store ? ` (${receiptData.store})` : '';
-        Alert.alert('Siker!', `${receiptData.items.length} termék felismerve a nyugtáról${storeInfo}`);
+        console.log('🎭 Preview modal visible = TRUE');
+        
+        console.log(`✅ OCR eredmény: ${receiptData.items.length} termék felismerve (${receiptData.store})`);
       } else {
         Alert.alert('Hiba', 'Nem sikerült termékeket felismerni a képről');
       }
@@ -568,7 +853,7 @@ export default function ShoppingScreen() {
 
       // Leggyakoribb termékek (top 10)
       const mostBoughtItems = Object.entries(itemFrequency)
-        .sort(([,a], [,b]) => b - a)
+        .sort(([,a], [,b]) => (b as number) - (a as number))
         .slice(0, 10)
         .map(([name, count]) => ({ name, count }));
 
@@ -729,51 +1014,91 @@ export default function ShoppingScreen() {
     </View>
   );
 
-  const renderSavedList = ({ item: list }) => (
-    <View style={styles.savedListContainer}>
-      <View style={styles.listHeader}>
-        <View style={styles.listHeaderContent}>
-          <Text style={styles.listTitle}>{list.name}</Text>
-          <Text style={styles.listDate}>
-            {new Date(list.created_at).toLocaleDateString('hu-HU')}
-          </Text>
-          <Text style={styles.listTotal}>
-            Összesen: {list.total_amount}Ft
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={() => deleteList(list.id)}
-        >
-          <Ionicons name="trash" size={20} color="#ff4444" />
-        </TouchableOpacity>
-      </View>
-      
-      {/* Lista elemek map-pel, nem FlatList-tel a görgethetőség miatt */}
-      {list.items.map((item, index) => (
-        <View key={`${list.id}-${index}`} style={styles.savedListItem}>
-          <TouchableOpacity
-            style={styles.itemCheckbox}
-            onPress={() => updateListItem(list.id, item.id, { checked: !item.checked })}
-          >
-            <Ionicons
-              name={item.checked ? "checkbox" : "square-outline"}
-              size={20}
-              color={item.checked ? "#667eea" : "rgba(255, 255, 255, 0.7)"}
-            />
-          </TouchableOpacity>
-          <View style={styles.itemInfo}>
-            <Text style={[styles.savedItemName, item.checked && styles.checkedItem]}>
-              {item.name}
+  const completeShoppingList = async (listId) => {
+    try {
+      const { error } = await supabase
+        .from('shopping_lists')
+        .update({ completed: true })
+        .eq('id', listId);
+
+      if (error) throw error;
+
+      Alert.alert('Siker', 'Bevásárlás befejezve!');
+      loadShoppingLists();
+    } catch (error) {
+      console.error('Error completing shopping list:', error);
+      Alert.alert('Hiba', 'Nem sikerült befejezni a bevásárlást');
+    }
+  };
+
+  const renderSavedList = ({ item: list }) => {
+    const completedItems = list.items.filter(item => item.checked).length;
+    const totalItems = list.items.length;
+    const isCompleted = list.completed;
+
+    return (
+      <View style={[styles.savedListContainer, isCompleted && styles.completedListContainer]}>
+        <View style={styles.listHeader}>
+          <View style={styles.listHeaderContent}>
+            <Text style={styles.listTitle}>
+              {list.name}
+              {isCompleted && <Text style={styles.completedBadge}> ✅</Text>}
             </Text>
-            <Text style={styles.savedItemDetails}>
-              {item.quantity} {item.unit} • {item.price}Ft
+            <Text style={styles.listDate}>
+              {new Date(list.created_at).toLocaleDateString('hu-HU')}
+            </Text>
+            <Text style={styles.listTotal}>
+              Összesen: {list.total_amount}Ft
+            </Text>
+            <Text style={styles.listProgress}>
+              Haladás: {completedItems}/{totalItems} termék
             </Text>
           </View>
+          <View style={styles.listActions}>
+            {!isCompleted && completedItems > 0 && (
+              <TouchableOpacity
+                style={styles.completeButton}
+                onPress={() => completeShoppingList(list.id)}
+              >
+                <Ionicons name="checkmark-circle" size={20} color="white" />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={() => deleteList(list.id)}
+            >
+              <Ionicons name="trash" size={20} color="#ff4444" />
+            </TouchableOpacity>
+          </View>
         </View>
-      ))}
-    </View>
-  );
+        
+        {/* Lista elemek map-pel, nem FlatList-tel a görgethetőség miatt */}
+        {list.items.map((item, index) => (
+          <View key={`${list.id}-${index}`} style={styles.savedListItem}>
+            <TouchableOpacity
+              style={styles.itemCheckbox}
+              onPress={() => !isCompleted && updateListItem(list.id, item.id, { checked: !item.checked })}
+              disabled={isCompleted}
+            >
+              <Ionicons
+                name={item.checked ? "checkbox" : "square-outline"}
+                size={20}
+                color={item.checked ? "#667eea" : "rgba(255, 255, 255, 0.7)"}
+              />
+            </TouchableOpacity>
+            <View style={styles.itemInfo}>
+              <Text style={[styles.savedItemName, item.checked && styles.checkedItem, isCompleted && styles.completedItemName]}>
+                {item.name}
+              </Text>
+              <Text style={[styles.savedItemDetails, isCompleted && styles.completedItemDetails]}>
+                {item.quantity} {item.unit} • {item.price}Ft
+              </Text>
+            </View>
+          </View>
+        ))}
+      </View>
+    );
+  };
 
   // Render new list tab
   const renderNewListTab = () => (
@@ -855,6 +1180,35 @@ export default function ShoppingScreen() {
             placeholderTextColor="rgba(255, 255, 255, 0.6)"
             keyboardType="numeric"
           />
+        </View>
+
+        {/* Kategória választás badge-ekkel */}
+        <View style={styles.categorySection}>
+          <Text style={styles.categorySectionTitle}>Kategória</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.categoryScrollView}
+            contentContainerStyle={styles.categoryScrollContent}
+          >
+            {PRODUCT_CATEGORIES.map((category) => (
+              <TouchableOpacity
+                key={category}
+                style={[
+                  styles.categoryChip,
+                  currentItem.category === category && styles.selectedCategoryChip
+                ]}
+                onPress={() => setCurrentItem({...currentItem, category: category})}
+              >
+                <Text style={[
+                  styles.categoryChipText,
+                  currentItem.category === category && styles.selectedCategoryChipText
+                ]}>
+                  {category}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
 
         <TouchableOpacity style={styles.addButton} onPress={addItem}>
@@ -1292,8 +1646,9 @@ export default function ShoppingScreen() {
                     console.log('📊 Tanulási statisztikák:', stats);
                   }
                   
-                  const jsonData = JSON.stringify(previewItems);
-                  importReceiptData(jsonData, previewStoreName);
+                  // OCR elemek feldolgozása és mentése
+                  await processOCRResults(previewItems, previewStoreName);
+                  
                   setIsPreviewModalVisible(false);
                   setImportJsonData('');
                   setImportStoreName('');
@@ -1333,17 +1688,70 @@ export default function ShoppingScreen() {
                 <ScrollView style={styles.editForm}>
                   <View style={styles.formGroup}>
                     <Text style={styles.label}>Termék neve</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={editName}
-                      onChangeText={(text) => {
-                        console.log('📝 Név változtatás:', text);
-                        setEditName(text);
-                      }}
-                      placeholder="Termék neve"
-                      autoFocus={true}
-                      returnKeyType="next"
-                    />
+                    <View style={styles.productInputContainer}>
+                      <TextInput
+                        style={styles.textInput}
+                        value={editName}
+                        onChangeText={async (text) => {
+                          console.log('📝 Név változtatás:', text);
+                          setEditName(text);
+                          
+                          // Javaslatok keresése, ha legalább 2 karakter van
+                          if (text.length >= 2) {
+                            const suggestions = await findSimilarProducts(text);
+                            setNameSuggestions(suggestions);
+                            setShowNameSuggestions(suggestions.length > 0);
+                          } else {
+                            setShowNameSuggestions(false);
+                            setNameSuggestions([]);
+                          }
+                        }}
+                        onFocus={() => {
+                          // Ha van név és van javaslat, mutassuk meg
+                          if (editName.length >= 2 && nameSuggestions.length > 0) {
+                            setShowNameSuggestions(true);
+                          }
+                        }}
+                        placeholder="Termék neve"
+                        autoFocus={true}
+                        returnKeyType="next"
+                      />
+                      
+                      {/* Termék név javaslatok */}
+                      {showNameSuggestions && nameSuggestions.length > 0 && (
+                        <View style={styles.suggestionsContainer}>
+                          {nameSuggestions.map((product, index) => (
+                            <TouchableOpacity
+                              key={index}
+                              style={styles.suggestionItem}
+                              onPress={() => {
+                                setEditName(product.name);
+                                setEditCategory(product.category || editCategory);
+                                setEditUnit(product.unit || editUnit);
+                                if (product.price > 0) {
+                                  setEditPrice(product.price.toString());
+                                }
+                                setShowNameSuggestions(false);
+                                console.log('✅ Javaslat kiválasztva:', product.name);
+                              }}
+                            >
+                              <View style={styles.suggestionContent}>
+                                <Text style={styles.suggestionName}>{product.name}</Text>
+                                <Text style={styles.suggestionDetails}>
+                                  {product.category} • {product.price > 0 ? `${product.price} Ft/` : ''}{product.unit}
+                                </Text>
+                              </View>
+                            </TouchableOpacity>
+                          ))}
+                          <TouchableOpacity
+                            style={[styles.suggestionItem, { backgroundColor: 'rgba(0,0,0,0.05)' }]}
+                            onPress={() => setShowNameSuggestions(false)}
+                          >
+                            <Text style={styles.suggestionDetails}>Bezárás</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
                   </View>
 
                   <View style={styles.formRow}>
@@ -1394,16 +1802,28 @@ export default function ShoppingScreen() {
 
                   <View style={styles.formGroup}>
                     <Text style={styles.label}>Kategória</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      value={editCategory}
-                      onChangeText={(text) => {
-                        console.log('🏷️ Kategória változtatás:', text);
-                        setEditCategory(text);
-                      }}
-                      placeholder="Egyéb"
-                      returnKeyType="done"
-                    />
+                    <View style={styles.categoryBadgesContainer}>
+                      {PRODUCT_CATEGORIES.map((category) => (
+                        <TouchableOpacity
+                          key={category}
+                          style={[
+                            styles.categoryBadge,
+                            editCategory === category && styles.selectedCategoryBadge
+                          ]}
+                          onPress={() => {
+                            console.log('🏷️ Kategória kiválasztva:', category);
+                            setEditCategory(category);
+                          }}
+                        >
+                          <Text style={[
+                            styles.categoryBadgeText,
+                            editCategory === category && styles.selectedCategoryBadgeText
+                          ]}>
+                            {category}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
                   </View>
 
                   <View style={styles.editButtonsContainer}>
@@ -2042,6 +2462,41 @@ const styles = StyleSheet.create({
     color: '#333',
     minHeight: 44,
   },
+  pickerContainer: {
+    borderWidth: 2,
+    borderColor: '#8B5FBF',
+    borderRadius: 8,
+    backgroundColor: 'white',
+    overflow: 'hidden',
+    minHeight: 50,
+    marginVertical: 4,
+  },
+  picker: {
+    height: 50,
+    backgroundColor: 'white',
+    color: '#333',
+    fontSize: 16,
+  },
+  pickerItem: {
+    fontSize: 16,
+    color: '#333',
+    textAlign: 'center',
+  },
+  categoryPickerContainer: {
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  categoryPickerWrapper: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    overflow: 'hidden',
+  },
+  categoryPicker: {
+    height: 44,
+    color: 'white',
+  },
   editButtonsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2072,5 +2527,112 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: 'white',
+  },
+  // Completed shopping list styles
+  completedListContainer: {
+    opacity: 0.7,
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+  },
+  completedBadge: {
+    color: '#4CAF50',
+    fontWeight: 'bold',
+  },
+  listProgress: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 4,
+  },
+  listActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  completeButton: {
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  completedItemName: {
+    opacity: 0.7,
+  },
+  completedItemDetails: {
+    opacity: 0.7,
+  },
+  // Category badge styles
+  categoryBadgesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+    gap: 8,
+  },
+  categoryBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(139, 95, 191, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(139, 95, 191, 0.3)',
+    marginBottom: 8,
+    marginRight: 8,
+  },
+  selectedCategoryBadge: {
+    backgroundColor: '#8B5FBF',
+    borderColor: '#8B5FBF',
+  },
+  categoryBadgeText: {
+    fontSize: 14,
+    color: '#8B5FBF',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  selectedCategoryBadgeText: {
+    color: 'white',
+    fontWeight: '600',
+  },
+  // New list category styles
+  categorySection: {
+    marginVertical: 15,
+  },
+  categorySectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: 'white',
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  categoryScrollView: {
+    maxHeight: 100,
+  },
+  categoryScrollContent: {
+    paddingHorizontal: 4,
+    alignItems: 'flex-start',
+  },
+  categoryChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    marginRight: 10,
+    minWidth: 60,
+  },
+  selectedCategoryChip: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderColor: 'white',
+  },
+  categoryChipText: {
+    fontSize: 14,
+    color: 'white',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  selectedCategoryChipText: {
+    color: '#667eea',
+    fontWeight: '600',
   },
 });

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
 import { UserProfile } from '../types/database';
 
@@ -8,9 +9,12 @@ interface AuthContextType {
   session: Session | null;
   userProfile: UserProfile | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: unknown }>;
+  signIn: (email: string, password: string, rememberMe?: boolean) => Promise<{ error: unknown }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: unknown }>;
   signOut: () => Promise<void>;
+  isRememberMeEnabled: () => Promise<boolean>;
+  clearRememberMe: () => Promise<void>;
+  getSavedEmail: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -88,12 +92,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string, rememberMe: boolean = false) => {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
+      
+      // Ha "Bejelentkezve marad" be van pipálva, mentjük az adatokat
+      if (rememberMe && !error) {
+        await AsyncStorage.setItem('rememberMe', 'true');
+        await AsyncStorage.setItem('savedEmail', email);
+      }
+      
       return { error };
     } catch (error) {
       return { error };
@@ -119,6 +130,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    // Töröljük a "Bejelentkezve marad" adatokat kijelentkezéskor
+    await AsyncStorage.removeItem('rememberMe');
+    await AsyncStorage.removeItem('savedEmail');
+  };
+
+  const isRememberMeEnabled = async (): Promise<boolean> => {
+    try {
+      const rememberMe = await AsyncStorage.getItem('rememberMe');
+      return rememberMe === 'true';
+    } catch (error) {
+      return false;
+    }
+  };
+
+  const clearRememberMe = async (): Promise<void> => {
+    try {
+      await AsyncStorage.removeItem('rememberMe');
+      await AsyncStorage.removeItem('savedEmail');
+    } catch (error) {
+      // Silent error
+    }
+  };
+
+  const getSavedEmail = async (): Promise<string | null> => {
+    try {
+      return await AsyncStorage.getItem('savedEmail');
+    } catch (error) {
+      return null;
+    }
   };
 
   const value = {
@@ -129,6 +169,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signIn,
     signUp,
     signOut,
+    isRememberMeEnabled,
+    clearRememberMe,
+    getSavedEmail,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

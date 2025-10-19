@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SalaryCalculator } from '../lib/salaryCalculator';
 import { SalaryCalculationInput } from '../types/salary';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 
+// ================================
+// IMPORTS ÉS ALAPOK
+// ================================
+
+// ================================
+// BÉRSZÁMÍTÁSI KULCSOK 2025
+// ================================
 // 2025-ös bérszámítási kulcsok - BudgetScreen.tsx-ből másolva
 const KULCSOK = {
   SZOCIALIS_HOZZAJARULAS: 0.135, // 13.5% (munkáltatói teher)
@@ -29,6 +38,9 @@ const KULCSOK = {
   ERDEKKÉPVISELETI_TAGDIJ_SZAZALEK: 0.007 // 0.7% (adóalapot csökkenti)
 };
 
+// ================================
+// TYPESCRIPT TÍPUSOK
+// ================================
 interface SalaryCalculation {
   grossSalary: number;
   netSalary: number;
@@ -40,7 +52,27 @@ interface SalaryCalculation {
   totalDeductions: number;
 }
 
+// Supabase-ből jövő mentett kalkuláció típus
+interface SavedCalculation {
+  id: string;
+  family_member_id: string;
+  alapber: number;
+  ledolgozott_napok: number;
+  tulora_orak: number;
+  muszakpotlek_orak: number;
+  brutto_ber: number;
+  netto_ber: number;
+  created_at: string;
+  additional_incomes?: string;
+}
+
+// ================================
+// FŐKOMPONENS ÉS STATE VÁLTOZÓK
+// ================================
 export default function SalaryCalculatorScreen({ navigation }: any) {
+  const { user } = useAuth();
+  
+  // State változók az input mezőkhöz
   const [grossSalary, setGrossSalary] = useState('400000');
   const [workingDays, setWorkingDays] = useState('20');
   const [overtimeHours, setOvertimeHours] = useState('0');
@@ -48,7 +80,11 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
   const [familyAllowance, setFamilyAllowance] = useState('0');
   const [otherIncome, setOtherIncome] = useState('170000');
   const [calculation, setCalculation] = useState<SalaryCalculation | null>(null);
+  const [savedCalculations, setSavedCalculations] = useState<SavedCalculation[]>([]);
 
+  // ================================
+  // BÉRSZÁMÍTÁSI LOGIKA
+  // ================================
   const calculateSalary = () => {
     const alapber = parseFloat(grossSalary) || 0;
     const munkanapok = parseFloat(workingDays) || 20;
@@ -83,6 +119,39 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
     });
   };
 
+  // ================================
+  // SUPABASE INTEGRÁCIÓ
+  // ================================
+  // Mentett bérszámítások betöltése
+  const fetchSavedCalculations = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('salary_calculations')
+        .select('*')
+        .eq('family_member_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      if (error) {
+        console.error('Error fetching saved calculations:', error);
+      } else {
+        setSavedCalculations(data || []);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  }, [user]);
+
+  // Komponens betöltésekor lekérjük a mentett kalkulációkat
+  useEffect(() => {
+    fetchSavedCalculations();
+  }, [fetchSavedCalculations]);
+
+  // ================================
+  // SEGÉDFÜGGVÉNYEK
+  // ================================
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('hu-HU', {
       style: 'currency',
@@ -92,21 +161,111 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
     }).format(amount);
   };
 
-  const saveCalculation = () => {
-    if (!calculation) return;
+  // Kalkuláció mentése
+  const saveCalculation = async () => {
+    if (!calculation || !user) {
+      Alert.alert('Hiba', 'Nincs számítás vagy felhasználó!');
+      return;
+    }
     
+    try {
+      const calculationData = {
+        family_member_id: user.id,
+        name: `Bérkalkuláció ${new Date().toLocaleDateString('hu-HU')}`,
+        alapber: parseFloat(grossSalary) || 0,
+        ledolgozott_napok: parseFloat(workingDays) || 20,
+        ledolgozott_orak: (parseFloat(workingDays) || 20) * 8.1,
+        tulora_orak: parseFloat(overtimeHours) || 0,
+        muszakpotlek_orak: parseFloat(nightShiftHours) || 0,
+        formaruha_kompenzacio: parseFloat(otherIncome) || 0,
+        csaladi_adokedvezmeny: parseFloat(familyAllowance) || 0,
+        brutto_ber: calculation.grossSalary,
+        netto_ber: calculation.netSalary,
+        szja: calculation.personalTax,
+        tb_jarulék: calculation.socialSecurity,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      const { error: calcError } = await supabase
+        .from('salary_calculations')
+        .insert([calculationData])
+        .select();
+
+      if (calcError) {
+        console.error('Error saving calculation:', calcError);
+        Alert.alert('Hiba', 'Nem sikerült menteni a kalkulációt: ' + calcError.message);
+        return;
+      }
+
+      Alert.alert('Siker', 'A bérkalkuláció sikeresen elmentve!');
+      fetchSavedCalculations(); // Frissítjük a listát
+    } catch (error) {
+      console.error('Error:', error);
+      Alert.alert('Hiba', 'Váratlan hiba történt');
+    }
+  };
+
+  // Kalkuláció törlése
+  const deleteCalculation = async (calculationId: string) => {
     Alert.alert(
-      'Számítás mentése',
-      'A bérkalkuláció sikeresen elmentve!',
-      [{ text: 'OK' }]
+      'Kalkuláció törlése',
+      'Biztosan törölni szeretnéd ezt a kalkulációt?',
+      [
+        {
+          text: 'Mégse',
+          style: 'cancel',
+        },
+        {
+          text: 'Törlés',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error: calcError } = await supabase
+                .from('salary_calculations')
+                .delete()
+                .eq('id', calculationId);
+
+              if (calcError) {
+                console.error('Error deleting calculation:', calcError);
+                Alert.alert('Hiba', 'Nem sikerült törölni a kalkulációt');
+                return;
+              }
+
+              Alert.alert('Siker', 'Kalkuláció sikeresen törölve!');
+              fetchSavedCalculations(); // Frissítjük a listát
+            } catch (error) {
+              console.error('Error:', error);
+              Alert.alert('Hiba', 'Váratlan hiba történt');
+            }
+          }
+        }
+      ]
     );
   };
 
+  // Kalkuláció betöltése szerkesztéshez
+  const loadCalculationForEdit = (calc: SavedCalculation) => {
+    setGrossSalary(calc.alapber.toString());
+    setWorkingDays(calc.ledolgozott_napok.toString());
+    setOvertimeHours(calc.tulora_orak.toString());
+    setNightShiftHours(calc.muszakpotlek_orak.toString());
+    // A többi mező is betölthető ha van adat
+    
+    Alert.alert('Betöltve', 'A kalkuláció adatai betöltve szerkesztésre!');
+  };
+
+  // ================================
+  // RENDER - FELHASZNÁLÓI FELÜLET
+  // ================================
   return (
     <LinearGradient
       colors={['#22D3EE', '#14B8A6', '#22C55E']}
       style={styles.container}
     >
+      {/* ================================ */}
+      {/* FEJLÉC SZEKCIÓ */}
+      {/* ================================ */}
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton}
@@ -119,6 +278,9 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
       </View>
 
       <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* ================================ */}
+        {/* ALAPADATOK SZEKCIÓ */}
+        {/* ================================ */}
         {/* Alapadatok */}
         <View style={styles.section}>
           <Text style={styles.sectionIcon}>🏠</Text>
@@ -286,12 +448,12 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
             <View style={styles.actionButtons}>
               <TouchableOpacity style={styles.saveButton} onPress={saveCalculation}>
                 <Ionicons name="save-outline" size={20} color="white" />
-                <Text style={styles.saveButtonText}>Számítás frissítése</Text>
+                <Text style={styles.saveButtonText}>Kalkuláció mentése</Text>
               </TouchableOpacity>
               
               <TouchableOpacity style={styles.exportButton}>
                 <Ionicons name="download-outline" size={20} color="white" />
-                <Text style={styles.exportButtonText}>Kalkuláció mentése</Text>
+                <Text style={styles.exportButtonText}>Export JSON</Text>
               </TouchableOpacity>
               
               <TouchableOpacity style={styles.planButton}>
@@ -302,19 +464,81 @@ export default function SalaryCalculatorScreen({ navigation }: any) {
 
             {/* Korábbi kalkulációk */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>🧮 Korábbi kalkulációk</Text>
+              <Text style={styles.sectionTitle}>Korábbi kalkulációk</Text>
               
-              <View style={styles.previousCalculation}>
-                <Text style={styles.previousDate}>2024. július 11.</Text>
-                <Text style={styles.previousAmount}>400,000 Ft • 22 nap</Text>
-                <Text style={styles.previousResult}>{formatCurrency(299250)}</Text>
-              </View>
-              
-              <View style={styles.previousCalculation}>
-                <Text style={styles.previousDate}>2024. július 1.</Text>
-                <Text style={styles.previousAmount}>380,000 Ft • 22 nap</Text>
-                <Text style={styles.previousResult}>{formatCurrency(284240)}</Text>
-              </View>
+              {savedCalculations.length > 0 ? (
+                savedCalculations.map((calc, index) => (
+                  <View key={calc.id} style={styles.calculationCard}>
+                    <View style={styles.calculationHeader}>
+                      <View style={styles.calculationTitleContainer}>
+                        <Text style={styles.calculationName}>
+                          Bérkalkuláció - {new Date(calc.created_at).toLocaleDateString('hu-HU', { 
+                            year: 'numeric', 
+                            month: 'long', 
+                            day: 'numeric' 
+                          })}
+                        </Text>
+                        <Text style={styles.calculationDate}>
+                          {new Date(calc.created_at).toLocaleDateString('hu-HU')}
+                        </Text>
+                      </View>
+                      <View style={styles.calculationActions}>
+                        <TouchableOpacity
+                          style={styles.editCalculationButton}
+                          onPress={() => loadCalculationForEdit(calc)}
+                        >
+                          <Ionicons name="pencil" size={16} color="#14B8A6" />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.deleteCalculationButton}
+                          onPress={() => deleteCalculation(calc.id)}
+                        >
+                          <Ionicons name="trash" size={16} color="#EF4444" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    
+                    <View style={styles.calculationDetails}>
+                      <View style={styles.calculationDetailRow}>
+                        <Text style={styles.calculationDetailLabel}>Alapbér:</Text>
+                        <Text style={styles.calculationDetailValue}>{formatCurrency(calc.alapber)}</Text>
+                      </View>
+                      <View style={styles.calculationDetailRow}>
+                        <Text style={styles.calculationDetailLabel}>Ledolgozott napok:</Text>
+                        <Text style={styles.calculationDetailValue}>{calc.ledolgozott_napok} nap</Text>
+                      </View>
+                      {calc.tulora_orak > 0 && (
+                        <View style={styles.calculationDetailRow}>
+                          <Text style={styles.calculationDetailLabel}>Túlóra:</Text>
+                          <Text style={styles.calculationDetailValue}>{calc.tulora_orak} óra</Text>
+                        </View>
+                      )}
+                      {calc.muszakpotlek_orak > 0 && (
+                        <View style={styles.calculationDetailRow}>
+                          <Text style={styles.calculationDetailLabel}>Műszakpótlék:</Text>
+                          <Text style={styles.calculationDetailValue}>{calc.muszakpotlek_orak} óra</Text>
+                        </View>
+                      )}
+                      <View style={styles.calculationDetailRow}>
+                        <Text style={styles.calculationDetailLabel}>Bruttó bér:</Text>
+                        <Text style={styles.calculationDetailValue}>{formatCurrency(calc.brutto_ber)}</Text>
+                      </View>
+                      <View style={styles.calculationDetailRow}>
+                        <Text style={styles.calculationDetailLabel}>Nettó bér:</Text>
+                        <Text style={[styles.calculationDetailValue, styles.greenText]}>{formatCurrency(calc.netto_ber)}</Text>
+                      </View>
+                    </View>
+                  </View>
+                ))
+              ) : (
+                <View style={styles.noCalculations}>
+                  <Ionicons name="calculator" size={64} color="rgba(255, 255, 255, 0.5)" />
+                  <Text style={styles.noCalculationsText}>Nincs mentett kalkuláció</Text>
+                  <Text style={styles.noCalculationsSubtext}>
+                    Számítsd ki a bért és mentsd el a "Kalkuláció mentése" gombbal
+                  </Text>
+                </View>
+              )}
             </View>
           </>
         )}
@@ -340,13 +564,13 @@ const styles = StyleSheet.create({
   },
   backButton: {
     padding: 8,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: 'white', // Fehér háttér a jobb kontraszt érdekében
     borderRadius: 20,
   },
   headerTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#1f2937',
+    color: '#1e40af', // Kék szín a jobb láthatóságért
     flex: 1,
     textAlign: 'center',
     marginHorizontal: 10,
@@ -370,7 +594,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#1f2937',
+    color: '#1e40af', // Kék szín a jobb láthatóságért
     marginBottom: 16,
   },
   inputGroup: {
@@ -378,7 +602,7 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 14,
-    color: '#374151',
+    color: '#1e40af', // Kék szín a jobb láthatóságért
     marginBottom: 8,
     fontWeight: '500',
   },
@@ -389,7 +613,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
-    backgroundColor: '#f9fafb',
+    backgroundColor: 'white', // Fehér háttér a jobb kontraszt érdekében
+    color: '#1e40af', // Input szöveg színe
   },
   calculateButton: {
     backgroundColor: '#14b8a6',
@@ -415,7 +640,7 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: 14,
-    color: '#374151',
+    color: '#1e40af', // Kék szín a jobb láthatóságért
   },
   deductionAmount: {
     fontSize: 24,
@@ -429,11 +654,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: '#e5e7eb', // Világosabb szürke vonal
   },
   deductionLabel: {
     fontSize: 14,
-    color: '#374151',
+    color: '#1e40af', // Kék szín a jobb láthatóságért
   },
   deductionValue: {
     fontSize: 14,
@@ -454,7 +679,7 @@ const styles = StyleSheet.create({
   },
   netLabel: {
     fontSize: 14,
-    color: '#374151',
+    color: '#1e40af', // Kék szín a jobb láthatóságért
   },
   netValue: {
     fontSize: 14,
@@ -516,22 +741,29 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   previousCalculation: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: 'white', // Fehér háttér a jobb kontraszt érdekében
     padding: 16,
     borderRadius: 12,
     marginBottom: 12,
     borderLeftWidth: 4,
     borderLeftColor: '#14b8a6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   previousDate: {
     fontSize: 12,
-    color: '#6b7280',
+    color: '#000000', // Fekete szín - tökéletes kontraszt fehér háttéren
     marginBottom: 4,
+    fontWeight: '600',
   },
   previousAmount: {
     fontSize: 14,
-    color: '#374151',
+    color: '#000000', // Fekete szín - tökéletes kontraszt fehér háttéren
     marginBottom: 4,
+    fontWeight: '600',
   },
   previousResult: {
     fontSize: 16,
@@ -584,15 +816,103 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: '#e5e7eb', // Világosabb szürke vonal
   },
   employerCostLabel: {
     fontSize: 14,
-    color: '#374151',
+    color: '#1e40af', // Kék szín a jobb láthatóságért
   },
   employerCostValue: {
     fontSize: 14,
     fontWeight: '600',
     color: '#dc2626',
+  },
+  noCalculations: {
+    alignItems: 'center',
+    padding: 32,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  noCalculationsText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  noCalculationsSubtext: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.6)',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  calculationCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)', // Majdnem fehér, átlátszó
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#14b8a6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  calculationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  calculationTitleContainer: {
+    flex: 1,
+  },
+  calculationName: {
+    color: '#1f2937',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  calculationDate: {
+    color: '#6b7280',
+    fontSize: 12,
+  },
+  calculationActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editCalculationButton: {
+    backgroundColor: 'rgba(20, 184, 166, 0.2)',
+    borderRadius: 8,
+    padding: 8,
+  },
+  deleteCalculationButton: {
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    borderRadius: 8,
+    padding: 8,
+  },
+  calculationDetails: {
+    marginTop: 8,
+  },
+  calculationDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  calculationDetailLabel: {
+    color: '#374151',
+    fontSize: 14,
+  },
+  calculationDetailValue: {
+    color: '#1f2937',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  greenText: {
+    color: '#059669',
+    fontWeight: '600',
   },
 });

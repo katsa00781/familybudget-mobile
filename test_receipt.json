@@ -1,0 +1,37 @@
+[
+  {
+    "name": "K3NY3R",
+    "quantity": 1,
+    "unit": "db", 
+    "price": 450,
+    "category": "Pékáru"
+  },
+  {
+    "name": "T3JF0L 20%",
+    "quantity": 1,
+    "unit": "db",
+    "price": 320,
+    "category": "Tejtermék"
+  },
+  {
+    "name": "4LM4",
+    "quantity": 1,
+    "unit": "kg",
+    "price": 890,
+    "category": "Gyümölcs"
+  },
+  {
+    "name": "C0C4-C0L4",
+    "quantity": 2,
+    "unit": "l",
+    "price": 1240,
+    "category": "Ital"
+  },
+  {
+    "name": "TR4PP1ST4 S4JT",
+    "quantity": 200,
+    "unit": "g",
+    "price": 680,
+    "category": "Tejtermék"
+  }
+]
