@@ -194,6 +194,34 @@ const createInitialBudgetData = (): BudgetCategory[] => [
   }
 ];
 
+// Új költségvetés létrehozása az előző hónap adatai alapján
+const createBudgetFromPrevious = async (previousBudget: SavedBudget): Promise<BudgetCategory[]> => {
+  if (!previousBudget.budget_data) {
+    return createInitialBudgetData();
+  }
+
+  // Konvertáljuk az előző költségvetés adatait új ID-kkel
+  const categoryMap: { [key: string]: BudgetItem[] } = {};
+  
+  previousBudget.budget_data.forEach(item => {
+    if (!categoryMap[item.category]) {
+      categoryMap[item.category] = [];
+    }
+    // Új ID generálása minden tételhez
+    categoryMap[item.category].push({
+      ...item,
+      id: generateId()
+    });
+  });
+
+  const categories: BudgetCategory[] = Object.entries(categoryMap).map(([name, items]) => ({
+    name,
+    items
+  }));
+
+  return categories;
+};
+
 const BudgetScreen: React.FC = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -295,6 +323,17 @@ const BudgetScreen: React.FC = () => {
       // Ha van mentett költségvetés, betöltjük az elsőt
       if (budgetData && budgetData.length > 0) {
         loadBudget(budgetData[0]);
+      } else {
+        // Ha nincs mentett költségvetés (új felhasználó), alapértelmezett adatokat állítunk be
+        setBudgetData(createInitialBudgetData());
+        const currentDate = new Date();
+        const currentMonth = currentDate.toLocaleDateString('hu-HU', { 
+          year: 'numeric', 
+          month: 'long' 
+        });
+        setBudgetName(`Költségvetés - ${currentMonth}`);
+        setBudgetDescription('');
+        setSelectedBudgetId('');
       }
 
       // Ha van bevételi terv, beállítjuk az elvárható jövedelmet
@@ -612,7 +651,7 @@ const BudgetScreen: React.FC = () => {
   };
 
   // Új költségvetés létrehozása
-  const createNewBudget = () => {
+  const createNewBudget = async () => {
     Alert.alert(
       'Új költségvetés',
       'Szeretnél új költségvetést létrehozni? Az aktuális módosítások elvesznek.',
@@ -622,15 +661,64 @@ const BudgetScreen: React.FC = () => {
           style: 'cancel',
         },
         {
-          text: 'Új költségvetés',
+          text: 'Előző hónap alapján',
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              
+              // Keressük meg a legutóbbi költségvetést
+              const latestBudget = savedBudgets.length > 0 ? savedBudgets[0] : null;
+              
+              let newBudgetData: BudgetCategory[];
+              let budgetNameSuffix = '';
+              
+              if (latestBudget) {
+                // Ha van előző költségvetés, azt használjuk alapként
+                newBudgetData = await createBudgetFromPrevious(latestBudget);
+                budgetNameSuffix = ` (${new Date(latestBudget.created_at).toLocaleDateString('hu-HU', { year: 'numeric', month: 'long' })} alapján)`;
+              } else {
+                // Ha nincs előző költségvetés, használjuk az alapértelmezett adatokat
+                newBudgetData = createInitialBudgetData();
+                budgetNameSuffix = ' (alapértelmezett)';
+              }
+              
+              // Reset minden adat az új költségvetéshez
+              setBudgetData(newBudgetData);
+              setSelectedBudgetId('');
+              
+              // Automatikus névgenerálás
+              const currentDate = new Date();
+              const currentMonth = currentDate.toLocaleDateString('hu-HU', { 
+                year: 'numeric', 
+                month: 'long' 
+              });
+              setBudgetName(`Költségvetés - ${currentMonth}${budgetNameSuffix}`);
+              setBudgetDescription('');
+              
+              Alert.alert(
+                'Új költségvetés', 
+                latestBudget 
+                  ? `Új költségvetés létrehozva az előző hónap (${new Date(latestBudget.created_at).toLocaleDateString('hu-HU', { year: 'numeric', month: 'long' })}) adatai alapján! Ne felejts el menteni.`
+                  : 'Új költségvetés létrehozva alapértelmezett adatokkal! Ne felejts el menteni.'
+              );
+            } catch (error) {
+              console.error('Hiba az új költségvetés létrehozásakor:', error);
+              Alert.alert('Hiba', 'Nem sikerült létrehozni az új költségvetést');
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        },
+        {
+          text: 'Üres költségvetés',
           style: 'destructive',
           onPress: () => {
-            // Reset minden adat
+            // Reset minden adat alapértelmezett adatokkal
             setBudgetData(createInitialBudgetData());
             setSelectedBudgetId('');
             setBudgetName('');
             setBudgetDescription('');
-            Alert.alert('Új költségvetés', 'Új költségvetés létrehozva! Ne felejts el menteni.');
+            Alert.alert('Új költségvetés', 'Üres költségvetés létrehozva! Ne felejts el menteni.');
           },
         },
       ]
@@ -669,14 +757,27 @@ const BudgetScreen: React.FC = () => {
                 Alert.alert('Hiba', 'Nem sikerült törölni a költségvetést');
               } else {
                 Alert.alert('Siker', 'Költségvetés sikeresen törölve!');
-                // Reset minden adat
-                setBudgetData(createInitialBudgetData());
+                
+                // Adatok újra betöltése
+                await loadData();
+                
+                // Ha van másik mentett költségvetés, azt használjuk alapként
+                const remainingBudgets = savedBudgets.filter(b => b.id !== selectedBudgetId);
+                if (remainingBudgets.length > 0) {
+                  // Használjuk a legutóbbi megmaradt költségvetést
+                  const latestBudget = remainingBudgets[0];
+                  const newBudgetData = await createBudgetFromPrevious(latestBudget);
+                  setBudgetData(newBudgetData);
+                } else {
+                  // Ha nincs más költségvetés, használjuk az alapértelmezett adatokat
+                  setBudgetData(createInitialBudgetData());
+                }
+                
+                // Reset a kiválasztott költségvetés adatait
                 setSelectedBudgetId('');
                 setBudgetName('');
                 setBudgetDescription('');
                 setShowSaveModal(false);
-                // Adatok újra betöltése
-                loadData();
               }
             } catch (error) {
               console.error('Hiba a törlés során:', error);
